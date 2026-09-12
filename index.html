@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>happy_wedding</title>
+
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&family=M+PLUS+Rounded+1c:wght@400;700&family=Onest:wght@900&display=swap" rel="stylesheet">
+
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swiper@12/swiper-bundle.min.css" />
+    <script src="https://cdn.jsdelivr.net/npm/swiper@12/swiper-bundle.min.js"></script>
+</head>
+
+<body id="top">
+
+    <button class="menu_bt" type="button" aria-expanded="false">
+        <img class="menu_bt_img" src="img/menu_bt.svg" alt="">
+    </button>
+
+    <main>
+
+        <section class="fv">
+            <picture>
+                <!-- 800px未満はスマホ版のFV画像に切り替え -->
+                <source srcset="img/fv_sp.jpg" media="(max-width: 800px)">
+                <img src="img/fv_pc.jpg" alt="Happy Wedding Ryo &amp; Miyu">
+            </picture>
+            <div class="petals" aria-hidden="true"></div>
+        </section>
+
+        <div class="column">
+            <div class="side_area left">
+                <div class="film"></div>
+            </div>
+            <div class="main_content">
+                <section class="about" id="about">
+                    <div class="poem">
+                        <div class="area1">
+                            <p>お祝いの気持ちを</p>
+                            <p>形として残したいと思い</p>
+                            <p>今の学びを活かせる</p>
+                            <p>Webサイトという形で</p>
+                            <p>祝うことに決めました。</p>
+                        </div>
+                        <div class="area2">
+                            <p>思い出と愛に溢れた</p>
+                            <p>ページになったかと思います。</p>
+                            <p>いつでもこのページを見にきて</p>
+                            <p>思い出に浸ってください。</p>
+                        </div>
+                        <div class="area3">
+                            <p>それではどうぞ</p>
+                            <p>お楽しみください。</p>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="memory" id="memory">
+                    <header class="section_header">
+                        <h1>
+                            <p class="en">MEMORY</p>
+                            <p class="jp">思い出</p>
+                            <img class="memory_sticker" src="img/universal.png" alt="">
+                        </h1>
+                    </header>
+                    <div class="chirasu">
+                        <img class="photo_item" src="img/photo/memory/memory_10.jpeg" alt="">
+                        <img class="photo_item" src="img/photo/memory/memory_6.jpeg" alt="">
+                        <img class="photo_item" src="img/photo/memory/memory_4.png" alt="">
+                        <img class="photo_item" src="img/photo/memory/memory_1.png" alt="">
+                        <img class="photo_item" src="img/photo/memory/memory_8.jpeg" alt="">
+                    </div>
+
+                    <ul class="cards single">
+                        <li class="time">
+                            <img src="img/photo/memory/memory_9.jpeg" alt="">
+                            <a href="html/time.html" class="card_label">時系列で見る</a>
+                        </li>
+                        <li class="scene">
+                            <img src="img/photo/memory/memory_5.jpeg" alt="">
+                            <a href="#" class="card_label">シーン別に見る</a>
+                        </li>
+                    </ul>
+                </section>
+                <section class="message" id="message">
+                    <header class="section_header">
+                        <h1>
+                            <p class="en">MESSAGE</p>
+                            <p class="jp">お祝いメッセージ</p>
+                        </h1>
+                    </header>
+
+                    <ul class="select_tag">
+                        <li class="is-active"><a href="#">#ALL</a></li>
+                        <li><a href="#">#FAMILY</a></li>
+                        <li><a href="#">#FRIENDS</a></li>
+                    </ul>
+
+
+                    <div class="message_swiper swiper">
+                        <div class="swiper-wrapper">
+                            <div class="swiper-slide">
+                                <button type="button" class="message_card" data-name="お名前ダミー1" data-message="結婚おめでとう！ダミーメッセージです。フォーム提出後にここへ差し替わります。">
+                                    <div class="fr">
+                                        <img src="img/message.jpg" alt="">
+                                    </div>
+                                </button>
+                            </div>
+                            <div class="swiper-slide">
+                                <button type="button" class="message_card" data-name="お名前ダミー2" data-message="末長くお幸せに！ダミーメッセージです。フォーム提出後にここへ差し替わります。">
+                                    <div class="fr">
+                                        <img src="img/message.jpg" alt="">
+                                    </div>
+                                </button>
+                            </div>
+                            <div class="swiper-slide">
+                                <button type="button" class="message_card" data-name="お名前ダミー3" data-message="いつも仲良しな2人でいてください。ダミーメッセージです。">
+                                    <div class="fr">
+                                        <img src="img/message.jpg" alt="">
+                                    </div>
+                                </button>
+                            </div>
+                            <div class="swiper-slide">
+                                <button type="button" class="message_card" data-name="お名前ダミー4" data-message="ご結婚おめでとうございます。ダミーメッセージです。">
+                                    <div class="fr">
+                                        <img src="img/message.jpg" alt="">
+                                    </div>
+                                </button>
+                            </div>
+                            <div class="swiper-slide">
+                                <button type="button" class="message_card" data-name="お名前ダミー5" data-message="幸せな家庭を築いてください。ダミーメッセージです。">
+                                    <div class="fr">
+                                        <img src="img/message.jpg" alt="">
+                                    </div>
+                                </button>
+                            </div>
+                            <div class="swiper-slide">
+                                <button type="button" class="message_card" data-name="お名前ダミー6" data-message="これからも変わらず仲良くしてね。ダミーメッセージです。">
+                                    <div class="fr">
+                                        <img src="img/message.jpg" alt="">
+                                    </div>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="ui">
+                            <div class="bt me_prev"></div>
+                            <div class="bt me_next"></div>
+                        </div>
+                    </div>
+                </section>
+                <section class="QandA" id="QandA">
+                    <header class="section_header">
+                        <h1>
+                            <p class="en">Q&A</p>
+                            <p class="jp">よくある質問</p>
+                        </h1>
+                    </header>
+                    <ul class="qa_cards">
+                        <li class="qa_card">
+                            <button class="qa_card-q" type="button" aria-expanded="false">
+                                <span class="label">Q</span>
+                                <span class="text">2人の出逢いは？</span>
+                                <span class="qa_toggle" aria-hidden="true"></span>
+                            </button>
+                            <div class="qa_card-a">
+                                <div class="qa_card-a_inner">
+                                    <span class="label">A</span>
+                                    <p class="text">中学校から友達ではありましたが、高校を卒業後、一緒にスノーボードに行ったのがきっかけです。</p>
+                                </div>
+                            </div>
+                        </li>
+                        <li class="qa_card">
+                            <button class="qa_card-q" type="button" aria-expanded="false">
+                                <span class="label">Q</span>
+                                <span class="text">プロポーズの言葉は？</span>
+                                <span class="qa_toggle" aria-hidden="true"></span>
+                            </button>
+                            <div class="qa_card-a">
+                                <div class="qa_card-a_inner">
+                                    <span class="label">A</span>
+                                    <p class="text">ここに回答が入る</p>
+                                </div>
+                            </div>
+                        </li>
+                        <li class="qa_card">
+                            <button class="qa_card-q" type="button" aria-expanded="false">
+                                <span class="label">Q</span>
+                                <span class="text">お互いの好きなところは？</span>
+                                <span class="qa_toggle" aria-hidden="true"></span>
+                            </button>
+                            <div class="qa_card-a">
+                                <div class="qa_card-a_inner">
+                                    <span class="label">A</span>
+                                    <p class="text">ここに回答が入る</p>
+                                </div>
+                            </div>
+                        </li>
+                    </ul>
+
+                    <div class="qa_bt">
+                        <a href="html/contact.html">
+                            <div class="contact">
+                                <p>お問い合わせ</p>
+                            </div>
+                        </a>
+                    </div>
+                </section>
+
+                <section class="fin" id="fin">
+                    <header class="section_header">
+                        <h1>
+                            <p class="en">FIN</p>
+                            <p class="jp">最後に</p>
+                        </h1>
+                    </header>
+                    <div class="owarini">
+                        <div class="owarini_block">
+                            <p>2人と出会ってから</p>
+                            <p>人生がとても明るくなったと感じます。</p>
+                            <p>好きなことに熱中し、周りを巻き込んで</p>
+                            <p>楽しむことができる2人のパワーが</p>
+                            <p>そうさせたのだと思います。</p>
+                            <p>これからもそのパワーを絶やすことなく、</p>
+                            <p>夫婦として幸せを築いていって欲しいと</p>
+                            <p>思います。</p>
+                        </div>
+                        <div class="owarini_block">
+                            <p>改めてご結婚おめでとうございます。</p>
+                        </div>
+                    </div>
+                </section>
+                <p class="copyright">© 2026 yoko kazu</p>
+                <footer>
+                    <a href="#top" class="totop_bt">TOP</a>
+                    <p>
+                        <span>THANKS</span>
+                        <span>FOR</span>
+                        <span>WATCHING</span>
+                    </p>
+                </footer>
+            </div>
+
+            <div class="side_area right">
+                <div class="film"></div>
+            </div>
+        </div>
+    </main>
+
+    <!-- 右上の丸ボタンで開閉するモーダルメニュー -->
+    <nav class="modal_menu" id="modal_menu">
+        <div class="modal_menu_panel">
+            <button class="modal_menu_close" type="button"></button>
+            <ul>
+                <li><a href="#top">TOP</a></li>
+                <li><a href="#about">ABOUT</a></li>
+                <li><a href="#memory">MEMORY</a></li>
+                <li><a href="#message">MESSAGE</a></li>
+                <li><a href="#QandA">Q&amp;A</a></li>
+                <li><a href="#fin">FIN</a></li>
+            </ul>
+        </div>
+    </nav>
+
+
+    <div class="message_modal" id="message_modal">
+        <div class="message_modal_panel">
+            <button class="message_modal_close" type="button"></button>
+            <p class="message_modal_name"></p>
+            <p class="message_modal_text"></p>
+        </div>
+    </div>
+
+    <script src="js/function.js"></script>
+
+</body>
+
+</html>

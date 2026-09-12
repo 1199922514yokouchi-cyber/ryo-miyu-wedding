@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>お問い合わせ | happy_wedding</title>
+    <link rel="stylesheet" href="../css/style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&family=M+PLUS+Rounded+1c:wght@400;700&family=Onest:wght@900&display=swap" rel="stylesheet">
+</head>
+
+<body id="top">
+    <!-- 右上の丸いメニューボタン。トップページと同じもの -->
+    <button class="menu_bt" type="button" aria-expanded="false">
+        <img class="menu_bt_img" src="../img/menu_bt.svg" alt="">
+    </button>
+
+    <main class="contact_page">
+        <div class="contact_page_inner">
+            <!-- パンくず -->
+            <nav class="breadcrumb">
+                <a href="../index.html">TOP</a>
+                <span>&gt;</span>
+                <span class="current">お問い合わせ</span>
+            </nav>
+
+            <h1 class="contact_title">
+                <span class="en">CONTACT</span>
+                <span class="jp">いつでも横内を呼び出せる窓口</span>
+            </h1>
+
+            <p class="contact_lead">
+                ここから送信すると、横内本人に直接メールが届きます。<br>
+                遊びに誘いたい時も、なんとなく呼びたい時も、いつでもどうぞ。
+            </p>
+
+            <!-- フォームの構造（dl/dt/dd、label と input の for/id 紐付け）は
+                 授業でやったものと同じ書き方にしています -->
+            <form class="contact_form" action="mailto:yokouchi@example.com" method="post" enctype="text/plain">
+                <dl>
+                    <dt><label for="c_name">お名前</label></dt>
+                    <dd>
+                        <input type="text" name="name" id="c_name" placeholder="例）名和 凌" required>
+                    </dd>
+
+                    <dt><label for="c_reason">よびだす理由</label></dt>
+                    <dd>
+                        <select name="reason" id="c_reason">
+                            <option value="">選んでね</option>
+                            <option value="遊びに誘いたい">遊びに誘いたい</option>
+                            <option value="相談したいことがある">相談したいことがある</option>
+                            <option value="とにかく呼びたい">とにかく呼びたい</option>
+                            <option value="その他">その他（自由記入欄へ）</option>
+                        </select>
+                    </dd>
+
+                    <dt><label for="c_date">呼び出したい日時</label></dt>
+                    <dd class="datetime_row">
+                        <input type="date" name="date" id="c_date">
+                        <input type="time" name="time" id="c_time">
+                    </dd>
+
+                    <dt><label for="c_message">くわしい内容</label></dt>
+                    <dd>
+                        <textarea name="message" id="c_message" placeholder="自由に書いてください"></textarea>
+                    </dd>
+                </dl>
+
+                <div class="contact_bt_row">
+                    <input type="submit" value="横内を呼び出す" class="contact_submit">
+                    <input type="reset" value="リセット" class="contact_reset">
+                </div>
+            </form>
+        </div>
+    </main>
+
+    <!-- 右上の丸ボタンで開閉するモーダルメニュー。トップページと同じ構造 -->
+    <nav class="modal_menu" id="modal_menu">
+        <div class="modal_menu_panel">
+            <button class="modal_menu_close" type="button"></button>
+            <ul>
+                <li><a href="../index.html#top">TOP</a></li>
+                <li><a href="../index.html#about">ABOUT</a></li>
+                <li><a href="../index.html#memory">MEMORY</a></li>
+                <li><a href="../index.html#message">MESSAGE</a></li>
+                <li><a href="../index.html#QandA">Q&amp;A</a></li>
+                <li><a href="../index.html#fin">FIN</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <script src="../js/function.js"></script>
+
+</body>
+
+</html>

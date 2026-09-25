@@ -1,0 +1,596 @@
+/* ==========================================================
+   MESSAGE 下層ページ（メッセージ一覧, message-list.html）
+
+   MESSAGEカード（index.html #page-message .message__card）をクリックした
+   先の下層ページ。参考カタログ（message-interaction-catalog-2.html）の
+   パターンA「散らばりカード × 読む帯」の構造をそのまま採用：
+     1. 名前入りカードが並んだ一覧
+     2. カードをクリック → 中央の読む帯（横スクロール/スナップ）が開く
+     3. ホイール（縦）/ 横スクロール / 下の名前チップ / 矢印キーで次へ
+     4. 背景クリック・「閉じる」ボタン・Escで一覧に戻る
+   ただし配色・フォントはカタログのダミー配色ではなく、本サイト
+   （style.css）で実際に使っている値に合わせてある：
+     - 背景グラデーション：#FDD22B → #FFF1BB（.message__yellow-bgと同一）
+     - 見出しフォント：Dela Gothic One（本サイトの見出し共通フォント）
+     - 本文フォント：Noto Sans JP
+     - ピンクの差し色：#FD2B94（message_badge.svgのグラデーション始点）
+     - 青系グラデーション：#D6DEFE → #4C6EF5（カード裏面と同じ配色）
+   カードの「散らばり」表現は、カタログのようなFigma座標の絶対配置
+   （固定1200x760キャンバスをスケールする方式）ではなく、CSS Gridの
+   自動折り返し＋カードごとの微妙な回転角で表現している。理由：
+   このページは実運用のスマホ〜PC全幅で表示する必要があり、固定
+   キャンバスのスケール方式だとスマホ縦長比率で余白だらけ／カードが
+   小さくなりすぎる問題が出るため。Gridなら1セットのマークアップで
+   デスクトップ・モバイル両方が自然に流れる。
+=========================================================== */
+
+:root {
+  --mlist-ink: #282828;
+  --mlist-yellow-1: #FDD22B;
+  --mlist-yellow-2: #FFF1BB;
+  --mlist-pink: #FD2B94;
+  --mlist-pink-soft: #F193C2;
+  --mlist-blue-1: #D6DEFE;
+  --mlist-blue-2: #4C6EF5;
+  --mlist-paper: #FFFBE9;
+  --mlist-muted: #6B6152;
+}
+
+* { box-sizing: border-box; }
+
+body.mlist-body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: "Noto Sans JP", "Hiragino Kaku Gothic ProN", sans-serif;
+  color: var(--mlist-ink);
+  background: linear-gradient(178deg, var(--mlist-yellow-1) 0%, var(--mlist-yellow-2) 60%);
+  -webkit-font-smoothing: antialiased;
+}
+
+.mlist-dela { font-family: "Dela Gothic One", "Noto Sans JP", sans-serif; }
+
+/* ---------------- 背景：封筒散らばりデザイン ----------------
+   本人指示「メッセージのセクションを手紙で埋め尽くすデザイン」を、
+   一覧ページ（このページ）の背景として実装。添付されたFigma参照
+   （25枚の封筒を1440×900キャンバスへ散らして配置したデザイン）を、
+   同じ座標・回転角のまま1枚のテクスチャ画像として書き出し
+   （assets/img/message-list/mlist-bg-tile.webp）、それを
+   background-repeatで敷き詰めている（1枚の静止画配置ではなく、
+   index.htmlの.message__bg-tilesと同じ「タイル敷き詰め＋斜め
+   スライド」方式にしたのは、このページの縦の長さがメッセージ件数に
+   応じて可変で、1枚絵の固定配置だと画面が長い時に下側が
+   背景無しになってしまうため）。
+   単位はすべてvw（100vw=1440px相当）で統一し、縦横比を保ったまま
+   ビューポート幅に追従してスケールする（index.html側の
+   .message__bg-tilesと同じ考え方）。
+   ページ全体（body）がスクロールする作りなので、このレイヤーは
+   fixedでビューポート全体に固定し、スクロールしても背景が
+   常に画面を覆うようにしている。
+   本体のmain.mlist（一覧・カード）はposition指定なし（static）の
+   ままなので、CSSの重なり順のルール上「z-index:0以上の positioned
+   要素」はstatic要素より手前に描画されてしまう。そのため
+   .mlist__bg-riseにはz-index:-1（負の値）を明示し、static要素より
+   確実に奥へ回るようにしている。 */
+.mlist__bg-rise {
+  position: fixed;
+  inset: -15%;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+}
+.mlist__bg-tiles {
+  position: absolute;
+  inset: -25%;
+  background-image: url("../img/message-list/mlist-bg-tile.webp");
+  background-repeat: repeat;
+  background-size: 100vw 62.5vw; /* 1440×900のタイルをvw基準で統一（アスペクト比を保持） */
+  animation: mlist-bg-slide 64s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mlist__bg-tiles { animation: none; }
+}
+@keyframes mlist-bg-slide {
+  from { background-position: 0 0; }
+  to   { background-position: -100vw -62.5vw; }
+}
+
+/* ---------------- 戻るリンク ---------------- */
+.mlist__back {
+  position: fixed;
+  left: 20px;
+  top: 20px;
+  z-index: 20;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 44px;
+  padding: 0 18px;
+  border: 2px solid var(--mlist-ink);
+  border-radius: 999px;
+  background: #FFFDF8;
+  color: var(--mlist-ink);
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none;
+  box-shadow: 3px 3px 0 var(--mlist-ink);
+  transition: transform 0.15s ease;
+}
+.mlist__back:hover { transform: translateY(-2px); }
+
+/* ---------------- 一覧ヘッダー ---------------- */
+.mlist__head {
+  width: min(1080px, calc(100% - 48px));
+  margin: 0 auto;
+  padding: 96px 0 8px;
+  text-align: center;
+}
+.mlist__eyebrow {
+  margin: 0 0 8px;
+  color: var(--mlist-pink);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+}
+.mlist__title {
+  margin: 0;
+  font-size: clamp(26px, 5.2vw, 44px);
+  line-height: 1.3;
+  font-weight: 400;
+}
+/* ---------------- カード一覧（Grid） ----------------
+   本人指示「'名前のカードをクリックすると…'の文字は消したい」への
+   対応で.mlist__lead（旧・案内文）は廃止済み。
+   本人指示「'友人'と'家族、親族'で分けたい。カードが並んでる画面で
+   区画分けしたい」への対応：以前は#mlistGrid自体が1枚のCSS Gridだった
+   ものを、外枠の.mlist__groups（グリッドを持たないただの縦積み
+   コンテナ）＋「友人」「家族・親族」それぞれの.mlist__group（見出し＋
+   個別のgridである.mlist__group-grid）という2階層構造に変更した
+   （描画はmessage-list.js側、GROUPS配列をrelでフィルタして生成）。 */
+.mlist__groups {
+  width: min(1200px, calc(100% - 40px));
+  margin: 40px auto 120px;
+}
+
+.mlist__group + .mlist__group {
+  margin-top: 56px;
+}
+
+.mlist__group-title {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 0 0 22px;
+  font-family: "Dela Gothic One", "Noto Sans JP", sans-serif;
+  font-size: 15px;
+  font-weight: 400;
+  letter-spacing: 0.08em;
+  color: var(--mlist-ink);
+}
+.mlist__group-title::before,
+.mlist__group-title::after {
+  content: '';
+  flex: 1 1 auto;
+  height: 2px;
+  background: var(--mlist-ink);
+  opacity: 0.18;
+}
+.mlist__group-title span {
+  flex: 0 0 auto;
+  padding: 6px 18px;
+  border: 2px solid var(--mlist-ink);
+  border-radius: 999px;
+  background: #FFFDF8;
+  box-shadow: 3px 3px 0 var(--mlist-ink);
+}
+
+.mlist__group-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 26px 22px;
+}
+
+.mlist__card {
+  --tilt: 0deg;
+  position: relative;
+  width: 100%;
+  aspect-ratio: 184 / 148;
+  padding: 0;
+  border: 2px solid var(--mlist-ink);
+  border-radius: 18px;
+  background: var(--card-bg, #FFFDF8);
+  box-shadow: 6px 6px 0 var(--mlist-ink);
+  overflow: hidden;
+  text-align: left;
+  cursor: pointer;
+  transform: rotate(var(--tilt));
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  font: inherit;
+  color: inherit;
+}
+.mlist__card:hover,
+.mlist__card:focus-visible {
+  transform: rotate(0deg) translateY(-4px);
+  box-shadow: 8px 8px 0 var(--mlist-ink);
+}
+.mlist__card:focus-visible { outline: 3px solid var(--mlist-pink); outline-offset: 2px; }
+
+.mlist__card-num {
+  position: absolute;
+  left: 16px;
+  top: 12px;
+  font-size: 12px;
+  opacity: 0.5;
+}
+.mlist__card-name {
+  position: absolute;
+  left: 16px;
+  bottom: 32px;
+  font-size: 18px;
+  font-weight: 700;
+}
+.mlist__card-rel {
+  position: absolute;
+  left: 16px;
+  bottom: 12px;
+  font-size: 12px;
+  color: #4E4740;
+}
+.mlist__card-photo-tag {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: #FFFDF8;
+  border: 1.5px solid var(--mlist-ink);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+/* 写真つきカードの写真枠（本番用画像に差し替えるまではプレースホルダー表示） */
+.mlist__photo {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.mlist__photo-fallback {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 10px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--mlist-muted);
+  background:
+    repeating-linear-gradient(45deg, rgba(40,40,40,0.06) 0 10px, transparent 10px 20px);
+}
+.mlist__photo[data-broken="true"] { display: none; }
+
+/* 動画つきカード（本人指示：溝口彩乃様からのメモリー動画を表示）。
+   写真枠(.mlist__photo)と同じ「枠いっぱいにcoverで敷く」扱いだが、
+   <video>要素用に別クラスとして持たせてある。一覧のサムネイルでは
+   自動再生ループのみ（controls無し）、開いた読む帯側では
+   controls付きで再生する（message-list.js参照）。 */
+.mlist__video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  background: #000;
+}
+.mlist__video[data-broken="true"] { display: none; }
+
+/* 読む帯の動画の再生／停止ボタン。本人指示「再生バーとか最大化とか
+   いらないから再生停止だけできればいいよ」を受けて、ブラウザ標準の
+   controlsを外し、トップページMEMORYの動画カード（style.cssの
+   .memory__video-toggle）と同じ見た目・振る舞いにした：動画全体が
+   ボタンで、停止中は三角、再生中は縦棒2本。再生中はアイコンを消して
+   動画の邪魔をせず、マウスを乗せた時だけ表示する。 */
+.mlist__video-toggle {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: rgba(0, 0, 0, 0.15);
+  cursor: pointer;
+  opacity: 0.85;
+  transition: opacity 0.2s ease;
+}
+.mlist__video-icon {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 34px;
+  height: 34px;
+  transform: translate(-50%, -50%);
+  fill: #fff;
+  stroke: #fff;
+  stroke-width: 3;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
+  transition: opacity 0.2s ease;
+}
+.mlist__video-icon--play { transform: translate(-46%, -50%); } /* 三角形の視覚的重心を中央に補正 */
+.mlist__video-icon--pause { opacity: 0; }
+.mlist__video-card.is-playing .mlist__video-icon--play { opacity: 0; }
+.mlist__video-card.is-playing .mlist__video-icon--pause { opacity: 1; }
+.mlist__video-card.is-playing .mlist__video-toggle { opacity: 0; background: transparent; }
+.mlist__video-card:hover .mlist__video-toggle,
+.mlist__video-card.is-playing:hover .mlist__video-toggle,
+.mlist__video-toggle:focus-visible { opacity: 1; }
+.mlist__video-toggle:focus-visible { outline: 3px solid #FD2B94; outline-offset: -3px; }
+
+/* ---------------- 読む帯（オーバーレイ） ---------------- */
+.mlist__overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+}
+.mlist__overlay[hidden] { display: none; }
+
+.mlist__backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  padding: 0;
+  background: rgba(40, 40, 40, 0.62);
+  animation: mlist-fade 0.25s ease both;
+}
+
+.mlist__close {
+  position: absolute;
+  right: 20px;
+  top: 20px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 44px;
+  padding: 0 18px;
+  border: 2px solid var(--mlist-ink);
+  border-radius: 999px;
+  background: #FFFDF8;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.mlist__counter {
+  position: absolute;
+  left: 24px;
+  top: 26px;
+  z-index: 2;
+  font-size: 18px;
+  color: #FFFDF8;
+  pointer-events: none;
+}
+.mlist__hint {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 30px;
+  z-index: 2;
+  text-align: center;
+  font-size: 12px;
+  color: rgba(255, 253, 248, 0.85);
+  pointer-events: none;
+}
+
+/* 読む帯。本人指摘「端のカードの繋ぎがまだ不自然」「ドラッグで左右に
+   動かせるように」への対応で、ブラウザ標準の横スクロール（overflow-x＋
+   scroll-snap）をやめ、カードを帯の中央に重ねて置き、message-list.jsが
+   各カードのtransformで左右に並べる方式にした（画面外に出たカードは
+   反対側へ回り込む＝継ぎ目の無い無限ループ）。
+   - --mlist-gap：カード同士の間隔（JSが1枚分の送り幅の計算に使う）。
+   - touch-action: pan-y：タッチの縦方向（長文の本文スクロール）は
+     ブラウザに任せ、横方向の動きだけをJSのドラッグ処理が受け取る。 */
+.mlist__strip {
+  --mlist-gap: 28px;
+  --mlist-card-w: min(560px, 88vw);
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 84px;
+  bottom: 96px;
+  z-index: 1;
+  overflow: hidden;
+  touch-action: pan-y;
+  cursor: grab;
+  animation: mlist-rise 0.4s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.mlist__strip.is-dragging { cursor: grabbing; user-select: none; -webkit-user-select: none; }
+/* touch-actionは「一番近いスクロール領域」までしか親から引き継がれない。
+   カード（overflow:hidden）と本文（overflow-y:auto）はどちらもスクロール
+   領域扱いなので、帯だけにpan-yを付けてもカードの上から始めたスワイプには
+   効かず、横方向の指の動きをブラウザが自分のジェスチャーとして奪って
+   しまう（検証ではスワイプで送れず、ページの「戻る」まで発生した）。
+   カードと本文にも明示的にpan-yを付けて、横方向はJSのドラッグ処理へ渡す。 */
+.mlist__reading,
+.mlist__reading-body { touch-action: pan-y; }
+/* 横方向のオーバースクロールでブラウザの「戻る」が発動しないようにする
+   （このページは横スクロールを使わないので影響は無い）。 */
+html, body { overscroll-behavior-x: none; }
+
+.mlist__reading {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  left: calc(50% - var(--mlist-card-w) / 2);
+  width: var(--mlist-card-w);
+  display: flex;
+  flex-direction: column;
+  border: 2px solid var(--mlist-ink);
+  border-radius: 22px;
+  background: #FFFDF8;
+  overflow: hidden;
+  /* 位置・拡大率・不透明度はJSが毎フレーム直接書き込むので、
+     CSS transitionは付けない（付けると追従が遅れてドラッグがもたつく）。 */
+  will-change: transform, opacity;
+  cursor: pointer;
+}
+/* 中央のカードの中はテキスト選択・動画ボタン操作ができるよう通常カーソル
+   （脇のカードは押すとそのカードへ移動するのでpointer）。 */
+.mlist__reading.is-active { cursor: auto; }
+.mlist__strip.is-dragging .mlist__reading { cursor: grabbing; }
+.mlist__reading-photo {
+  position: relative;
+  height: 240px;
+  flex-shrink: 0;
+  border-bottom: 2px solid var(--mlist-ink);
+  background: var(--mlist-blue-1);
+}
+.mlist__reading-strip-color {
+  height: 14px;
+  flex-shrink: 0;
+  background: var(--card-bg, var(--mlist-blue-1));
+  border-bottom: 2px solid var(--mlist-ink);
+}
+.mlist__reading-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 22px 32px 0;
+}
+/* 本人指摘「最初の漢字一文字を使ってアイコンみたいなの作ってくれたけど、
+   いらないかな」への対応：頭文字の丸いアイコン（.mlist__reading-avatar）
+   をmessage-list.jsのマークアップから削除したため、対応するこのルールも
+   削除済み（旧: 42px円形、--card-bgの背景に頭文字を中央揃え）。 */
+.mlist__reading-name { font-size: 19px; font-weight: 700; }
+.mlist__reading-rel { font-size: 13px; color: var(--mlist-muted); }
+.mlist__reading-num {
+  margin-left: auto;
+  font-size: 13px;
+  color: var(--mlist-muted);
+}
+.mlist__reading-body {
+  margin: 0;
+  padding: 18px 32px 30px;
+  font-size: 16.5px;
+  line-height: 1.95;
+  overflow-y: auto;
+  flex-grow: 1;
+  /* 本番メッセージは改行込みでそのまま転記しているため、
+     テキスト中の改行をそのまま表示に反映する。 */
+  white-space: pre-line;
+}
+
+/* 本人指摘「下の名前タブだけど、ここもスクロールか、左右ボタン置いと
+   いて見切れてる人たちのタブも押せるように」への対応：以前は
+   .mlist__chips自体を絶対配置していたが、左右に矢印ボタンを並べる
+   ため.mlist__chip-row（横一列のflexコンテナ）でラップし、
+   .mlist__chipsはその中の「中央の可変幅スクロール領域」という位置づけ
+   に変更した（見切れているチップ自体はscroll-x:autoで元々押せていたが、
+   発見しにくかったための対応。加えてpaint()側でアクティブなチップを
+   scrollIntoView()するので、現在地のタブは常に見える）。 */
+.mlist__chip-row {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 26px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 14px;
+}
+
+.mlist__chip-nav {
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border: 2px solid var(--mlist-ink);
+  border-radius: 50%;
+  background: #FFFDF8;
+  cursor: pointer;
+  padding: 0;
+}
+.mlist__chip-nav:hover { background: var(--mlist-yellow-1); }
+
+/* 名前タブ列。読む帯と同じく横スクロールをやめ、タブを重ねて置いて
+   message-list.jsがtransformで並べる（読む帯と同じ現在地で駆動し、
+   端のタブは反対側へ回り込む＝無限ループ）。タブ同士の間隔（8px）は
+   JS側の定数CHIP_GAPと揃えてある。左右の端は背景に溶けるよう
+   マスクで少しぼかしている。 */
+.mlist__chips {
+  flex: 1 1 auto;
+  min-width: 0;
+  position: relative;
+  height: 42px;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 28px, #000 calc(100% - 28px), transparent 100%);
+  mask-image: linear-gradient(90deg, transparent 0, #000 28px, #000 calc(100% - 28px), transparent 100%);
+}
+/* ※以前ここにあった「justify-content:centerを外した」「scroll-behavior
+   :smoothを外した」という注記（2-3ap）は、横スクロール方式そのものを
+   やめたため不要になった（経緯はHANDOFF.mdの2-3apと2-3at参照）。 */
+.mlist__chip {
+  position: absolute;
+  top: 0;
+  left: 0;
+  white-space: nowrap;
+  will-change: transform;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 42px;
+  padding: 0 14px;
+  border: 2px solid var(--mlist-ink);
+  border-radius: 999px;
+  background: #FFFDF8;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.mlist__chip-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--card-bg, var(--mlist-blue-1));
+  border: 1.5px solid var(--mlist-ink);
+}
+.mlist__chip.is-active { background: var(--mlist-ink); color: #FFFDF8; }
+
+@keyframes mlist-fade { from { opacity: 0; } }
+@keyframes mlist-rise { from { opacity: 0; transform: translateY(16px); } }
+
+/* ---------------- レスポンシブ（本サイトの768pxブレークポイントに合わせる） ---------------- */
+@media (max-width: 768px) {
+  .mlist__head { padding: 88px 0 4px; }
+  .mlist__groups { margin: 28px auto 90px; }
+  .mlist__group + .mlist__group { margin-top: 36px; }
+  .mlist__group-title { font-size: 13px; margin-bottom: 16px; }
+  .mlist__group-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px 14px;
+  }
+  .mlist__card-name { font-size: 15px; }
+  .mlist__strip { top: 76px; bottom: 84px; --mlist-gap: 16px; --mlist-card-w: 88vw; }
+  .mlist__reading-photo { height: 180px; }
+  .mlist__reading-head { padding: 18px 22px 0; }
+  .mlist__reading-body { padding: 14px 22px 24px; font-size: 15.5px; }
+  .mlist__hint { display: none; }
+  .mlist__chip-row { padding: 0 8px; gap: 4px; }
+  .mlist__chip-nav { width: 30px; height: 30px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mlist__backdrop,
+  .mlist__strip,
+  .mlist__card {
+    animation: none !important;
+    transition: none !important;
+  }
+}

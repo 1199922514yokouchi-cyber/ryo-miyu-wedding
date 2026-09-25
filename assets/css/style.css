@@ -1,0 +1,3402 @@
+/* ==========================================================
+   RESET / BASE
+=========================================================== */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  font-family: "Noto Sans JP", "Hiragino Kaku Gothic ProN", sans-serif;
+  background: #111;
+  -webkit-font-smoothing: antialiased;
+}
+img { display: block; max-width: 100%; }
+
+/* ==========================================================
+   PT-13: サイトローダー（サイトを開いた瞬間の
+   「①ロード中→②ロード終わる→③幕が開く」演出）
+
+   本人依頼「サイト開いた時の演出ね。ロード/ロード終わる/幕が開く
+   こんな感じにしたいんだけどどんなアニメーションパターンがある？」
+   への対応として6パターン（A〜F）のカタログを送付し、本人が選んだ
+   「C：カウントアップ→ホワイトフラッシュ」をいったん実装していた。
+
+   ▼「マスクが縮小してファーストビューじゃなくて賑やかなページ遷移の
+   X06カウンターが割り込むを適用したい」への対応
+   本人からリンク切れで参照できていなかった「Interaction_Index.html」
+   （賑やかなページ遷移カタログ、18パターン）を実ファイルで共有して
+   もらい、その中の「X06：カウンターが割り込む（VEIL）」を確認した
+   （黒い幕がスライドで割り込む→0→100カウント＋下端の進捗バー→
+   ページを裏で差し替え→幕がそのまま上へスライドして抜ける、という
+   構成で、Cにあった白フラッシュや弾む演出は無い）。これに合わせて、
+   ①ロード中の見た目を「カウントアップ数字＋下端の進捗バー」に変更
+   （白フラッシュ用の.site-loader__flash、弾むis-punchは廃止）、
+   ②「③幕が開く」も、既存のサークルマスクが窄まる
+   shrinkOverlayAway()ではなく、幕がそのまま上へ抜けていく新しい
+   slideOverlayAway()（assets/js/page-transition.js）に差し替えた
+   （呼び出し側はindex.htmlの末尾インラインスクリプトと
+   tbc-top-button.js）。画面を覆う動き自体（①の前段）は従来どおり
+   既存のPT-09サークルマスクが担当し、このUIはその上に一時的に
+   差し込まれる（詳細な連携方法はassets/js/site-loader.jsのコメント
+   参照）。 */
+.site-loader__inner {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+
+.site-loader__num {
+  font-family: "Dela Gothic One", sans-serif;
+  font-size: 6.9444vw; /* 1440px基準で約100px */
+  color: #fff;
+  letter-spacing: .02em;
+  line-height: 1;
+}
+
+.site-loader__num::after {
+  content: '%';
+  font-size: 42%;
+  margin-left: .15em;
+}
+
+/* X06の「下端を横断する進捗バー」。数字のカウントアップと同期して
+   0%→100%へ幅が伸びる（制御はsite-loader.js側、JSで直接styleを
+   書き換えるのでtransitionは持たせない）。 */
+.site-loader__bar {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 4px;
+  width: 0%;
+  background: #FDD22B;
+  z-index: 2;
+}
+
+@media (max-width: 768px) {
+  .site-loader__num { font-size: 15vw; }
+}
+
+/* ==========================================================
+   SCROLL STAGE
+   body自体を縦長(.scroll-stageの高さぶん)にして、ネイティブスクロール
+   でページを送る。.scroll-stage__pin は position:fixed で常に画面に
+   貼りつき、中の .page を重ねて表示する。ページ間の演出
+   （PT-09 サークルマスクなど）は scrollYから算出した比率で
+   frame単位にかける（assets/js/pager.js）。
+=========================================================== */
+.scroll-stage {
+  position: relative;
+  width: 100%;
+  background: #111;
+  /* 実際の高さ(スクロール可能な距離)はJSが本文の実測に合わせて設定する */
+}
+
+.scroll-stage__pin {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.page {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  visibility: hidden;
+  z-index: 1;
+}
+
+.page.is-active {
+  visibility: visible;
+  z-index: 2;
+}
+
+/* MEMORYはABOUTの上に重なって現れる演出なので、両方が同時にis-active
+   になっている間もMEMORYが必ず手前に来るようにしておく。 */
+#page-memory.page.is-active {
+  z-index: 3;
+}
+
+/* MESSAGEはMEMORYの後に続くページなので、さらに手前に来るようにする。
+   ※本人指示でMESSAGE→QAの切り替えを「プッシュ型」からPT-05
+   「リビール型」に変更（MESSAGEが上の層、QAが下の層）したのに伴い、
+   ここは「後のページほど手前」という他ページ共通のルールの例外に
+   なっている——QA（このあとに続くページ）より意図的にMESSAGEの
+   z-indexを高くしてあるのは、リビールが成立するために「動かない
+   下の層(QA)の上に、動いて退場していく上の層(MESSAGE)が重なって
+   見えている」状態が必要なため（詳しくは次のQAの注記、および
+   assets/js/pager.jsのフェーズE1コメント参照）。 */
+#page-message.page.is-active {
+  z-index: 5;
+}
+
+/* QAはMESSAGEより手前に来る他ページのルールに反して、あえてMESSAGE
+   より背面に置いてある（本人指示：「PT-05のリビールを…messageが
+   上の層、Q&Aがしたの層として」）。プッシュ型だった頃はMESSAGE・QAの
+   translateYが画面をぴったり二分するだけだったのでz-indexの上下は
+   見た目に影響しなかったが、リビール型では下の層(QA)を動かさず
+   最初から定位置に静止させたまま、上の層(MESSAGE)だけが画面の外へ
+   スライドして退場することで初めてQAが露わになる、という仕組みに
+   なったため、QAが常にMESSAGEの「下」にいる必要がある。QA→FROM ME
+   のアイリス切り替え時だけ一時的にQAのz-indexを7へ引き上げる処理
+   （pager.jsのsetQaStackAboveFromMe）が既にあるが、それとは独立に
+   動作する（アイリス時はinline styleで上書きされるため、ここの
+   既定値には影響しない）。 */
+#page-qa.page.is-active {
+  z-index: 4;
+}
+
+#page-from-me.page.is-active {
+  z-index: 6;
+}
+
+/* PAGE 8（TO BE CONTINUED・画像シーン、サイト最後のページ）は、
+   MESSAGE→QAのリビール(PT-05)と同じ理由で「後のページほど手前」の
+   通常ルールの例外になる。PT-12「スプリット」はPAGE 8を最初から定位置に
+   静止させたまま、PAGE 7（上の層）自体が左右に裂けて退場することで
+   下から露わにする仕組みなので、PAGE 7がPAGE 8より常に手前にいる
+   必要がある。またPAGE 8はFROM ME（6）より奥だと、FROM MEの動画（画面
+   いっぱいの不透明レイヤー）がPAGE 7の裂け目越しにPAGE 8を覆い隠して
+   しまうため、FROM MEより手前・PAGE 7より奥、という位置に置く。 */
+#page-tbc-scene.page.is-active {
+  z-index: 7;
+}
+
+/* PAGE 7（TO BE CONTINUED・文字のみ）。FROM ME→PAGE7はPT-07
+   （ズーム＋フェード）で「後のページほど手前」の通常ルール通りだが、
+   続くPT-12スプリットの都合でPAGE 8（7）より1段手前にする必要があり、
+   結果としてここだけ8になる。 */
+#page-tbc-text.page.is-active {
+  z-index: 8;
+}
+
+/* MESSAGE／QAは「プッシュ型」で後から画面下からせり上がってくるが、
+   実際にtranslateYで動くのはそれぞれの内側の.message__stage／
+   .qa__stageだけで、その外側にある.page__frame自体は最初から
+   フレーム全体ぶんの大きさで静止している。そのため、is-activeが
+   付いた瞬間（＝まだ画面外にいる状態）から.page__frameがフレーム
+   全体のクリック／ホバー判定を持ってしまい、手前に積まれた
+   このページが、まだ見えていないのに背後のページ（MEMORYの動画や
+   MESSAGEカードのチルト）の当たり判定を奪ってしまう（本人指摘で
+   発覚：MESSAGEカードのチルトが効かない現象の原因）。
+   ここで.page自体（＝position:absolute;inset:0のフレーム全体を覆う
+   最上位の要素）を素通しにし、実際に画面内へせり上がってきた分の
+   .message__stage／.qa__stage（前段で pointer-events:auto に
+   戻している）だけでヒットテストするようにする。 */
+#page-message.page,
+#page-qa.page,
+#page-message .page__frame,
+#page-qa .page__frame {
+  pointer-events: none;
+}
+
+/* 「収める(letterbox/contain)」ではなく常に「覆う(cover)」。
+   aspect-ratioは1440/900のまま画面いっぱいに広げ、はみ出た分は
+   .page/.pagerのoverflow:hiddenで切り落とす。ワイドモニターでも
+   スマホの縦長でも、黒縁が出ずに画面いっぱいに表示される。 */
+.page__frame {
+  position: relative;
+  width: max(100vw, calc(100vh * 1440 / 900));
+  aspect-ratio: 1440 / 900;
+  overflow: hidden;
+  flex: none; /* .pageがflexなので、指定した幅で縮まないように固定 */
+}
+
+/* ==========================================================
+   FIRST VIEW
+   デザインカンプ(Figma node 820:8551)は 1440 x 900 を基準に作成。
+   すべてのサイズを vw 単位にして、幅が変わっても画像レイヤーと
+   帯のテキストが同じ比率で一緒にスケールするようにしている。
+=========================================================== */
+.fv {
+  width: 100%;
+  background: #111;
+}
+
+.fv__stage {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1440 / 900;   /* カンプの比率を維持したまま可変 */
+  overflow: hidden;
+  background: #FDD22B;        /* メインカラー（仕様シート A-1 指定） */
+}
+
+/* FV専用の例外対応：MacBook Air 15インチをブラウザ（アドレスバー等の
+   分だけ縦が実質的に削られる＝実効ビューポート比が1440/900(=1.6)より
+   横長になる）で開くと、他の全セクション共通の「.page__frameを
+   常にcover(はみ出た分は上下左右均等にクリップ)」というルールの下では、
+   フレームの高さがビューポートより高くなり、その超過ぶんが上下
+   均等に切り落とされる。上下ぎりぎりに配置されている上下帯（無限
+   マーキーのHAPPY WEDDING／RYO&MIYUテキスト）はこの時、ほぼ全部
+   画面外に消えてしまう（本人指摘で発覚）。
+   他セクション（ABOUT以降）はこのcover方式のまま維持してほしいとの
+   指示のため、ここではFVのフレーム／ステージだけ「ビューポートに
+   常にぴったり一致させる（はみ出しなし＝クリップも発生しない）」
+   方式に変更し、上下帯が常にビューポートの上端/下端に来るようにする。
+   コラージュ写真（.fv__layer）はもともとobject-fit:coverで独立して
+   面を覆う仕組みなので、この変更でも見た目のトリミング量が多少
+   変わるだけで破綻はしない。 */
+#page-fv .page__frame {
+  width: 100vw;
+  height: 100vh;
+  aspect-ratio: auto;
+}
+
+/* .fv__stageのheight:100%が効くためには、その親.fvにも明示的な
+   高さが要る（%指定は祖先チェーン全部に明示的heightが無いと効かない）。 */
+#page-fv .fv {
+  height: 100%;
+}
+
+#page-fv .fv__stage {
+  width: 100%;
+  height: 100%;
+  aspect-ratio: auto;
+}
+
+.fv__layers {
+  position: absolute;
+  inset: 0;
+}
+
+/* ファーストビューのチルト（assets/js/fv-intro.js）：レイヤー全体
+   （.fv__layers）をrotateX/rotateYで傾けるための奥行き。回転0の間は
+   見た目に影響しない。 */
+#page-fv .fv__stage { perspective: 1400px; }
+
+.fv__layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;          /* 全レイヤー同じ処理でズレを防ぐ */
+  pointer-events: none;
+}
+
+/* ==========================================================
+   花びらが舞い散る演出。
+   本人指示「ファーストビューの花びらの写真があると思うんだけどそれを
+   散らすように動かしてほしい。基本的には上から下に落ちてくる感じで、
+   花びらっぽく左右に多少揺れながらがいいね。それをループさせる感じ。
+   回転しながらのやつもあってもいいかも」への対応。
+
+   ▼元の構造の問題点
+   花びらは元々レイヤー3（大きめの花びら5枚）とレイヤー7（小さめの
+   花びら10枚）という2枚のフルフレーム画像の中に、固定位置の1枚絵として
+   焼き込まれていた（レイヤー自体はほぼ全面透明で、花びらの部分だけ
+   αが乗っている構成）。本人から「回転しながらのやつもあってもいいかも」
+   →「花びら一緒の写真に纏まってるから回転とか厳しいね」と、1枚絵の
+   ままでは個別の回転が難しいことを指摘いただいたが、実際にはPython
+   （Pillow＋scipyのconnected component分析）でαチャンネルから花びら
+   15枚それぞれの輪郭を検出し、1枚ずつ独立した透過画像として切り出す
+   ことで解決した（assets/img/fv-petal-01.webp〜15.webp、番号は
+   レイヤー3→7の順・画像内の上→左の順）。切り出した後の元レイヤー3・7
+   （assets/img/wedding_fv_layer_3.webp／_7.webp）は花びら部分のαだけ
+   0にして焼き込みを消してある（他の要素は無いので実質ほぼ全面透明の
+   まま）。これにより、花びら1枚ずつが独立してtranslate（落下＋左右の
+   揺れ）とrotate（回転、一部のみ）を別々のタイミングで行えるように
+   なった。
+
+   ▼構造（tbc-scene__motif/-imgと同じ「外側=移動、内側=回転」の二重構造。
+   1つの要素のtransformを移動と回転で同時に取り合うと片方が上書きして
+   しまうため）
+     .fv__petal（外側）　　　：left/widthで基準位置を指定し、
+       animation: fv-petal-fall-*（下記4パターンを使い回し）で
+       「上から下へ落下しながら左右に揺れる」move動作だけを担当。
+     .fv__petal-img（内側）　：花びら画像そのもの。回転させたい花びら
+       だけ.fv__petal-img--cw／--ccwを付けてanimation: fv-petal-spin-*
+       （360°を一定速度で回り続ける）を追加。回転させない花びらは
+       静止したtransform:rotate()を直接指定し、全部が同じ向きを
+       向いて単調にならないようにしている。
+   duration・delayは花びらごとに変え、animation-delayをマイナスにする
+   ことでページを開いた瞬間から「既にバラバラのタイミングで降っている
+   途中」の状態にしている（全員が画面上端から同時に降り始める不自然さを
+   避けるため。assets/css/style.css内の他のループ演出（AU-02マーキー、
+   最後のページの漂うモチーフ等）と同じ手法）。
+   width（花びらの表示サイズ）は元のFigmaカンプ上での実寸（切り出し画像
+   の横幅 ÷ 画像キャンバス幅2880 × 100vw）をそのまま使っており、
+   人物・雲などの他レイヤーとスケール感が揃うようにしてある。
+
+   落下の演出範囲は画面上端よりかなり上（-14vh〜-20vh）から画面下端より
+   かなり下（118vh）まで取ってあり、.fv__petals自体はoverflow:hiddenの
+   .fv__stageの内側にあるため、開始・終了位置が画面外に出る瞬間は
+   常にクリップされて見えない（他のモチーフ演出と同じく、フェード
+   アウトを使わずに済む安全マージンの取り方）。
+
+   ▼重なり順
+   DOM順は.fv__layers（写真コラージュ）の直後・.fv__band（上下のHAPPY
+   WEDDING帯）より前に置いている。.fv__petalsにも.fv__layerにも明示的な
+   z-indexを指定していない（＝auto）ため、写真より手前（DOM順で後）・
+   帯より奥（帯はz-index:2の明示指定があり、auto要素より必ず手前に来る
+   仕様）という重なりになる。花びらが上下帯の文字の上に乗って読みにくく
+   なるのを避けつつ、写真の上を舞う見た目になる。
+
+   ▼prefers-reduced-motion: reduce
+   他の常時ループ演出と同じく、animation-play-state: pausedで開始位置の
+   まま静止させる（display:noneで消すと「元々あった花びらの意匠」自体が
+   無くなってしまうため、静止画として残す方針）。 */
+.fv__petals {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.fv__petal {
+  position: absolute;
+  top: 0;
+  will-change: transform;
+  /* 本人指摘「花びら減速はいらないかも、自然に落ちてく感じで」への対応：
+     ease-in-outだと@keyframes fv-petal-fall-*の各キーフレーム（20%刻み）
+     の節目ごとに減速→加速を繰り返し、そこで一瞬止まって見えるのが
+     不自然だった。fallキーフレームの節目はあくまで「左右の揺れの
+     折り返し位置」を指定するためのものなので、速度は終始一定（linear）
+     にし、左右の揺れの緩急自体はイージングではなくキーフレームの間隔
+     （下記各パターンの%刻みを不均等にしてある）で表現する方針に変更。 */
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+
+.fv__petal-img {
+  display: block;
+  width: 100%;
+  height: auto;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+
+/* 揺れながら落下する4パターン（複数の花びらで使い回す）。
+   horizontal方向のtranslateはvw、fallはvhで指定し、-14〜-20vhから
+   118vhまで動かす。 */
+@keyframes fv-petal-fall-a {
+  0%   { transform: translate(0, -18vh); }
+  20%  { transform: translate(2.2vw, 8vh); }
+  40%  { transform: translate(-1.6vw, 28vh); }
+  60%  { transform: translate(2.4vw, 52vh); }
+  80%  { transform: translate(-1.8vw, 78vh); }
+  100% { transform: translate(1.2vw, 118vh); }
+}
+@keyframes fv-petal-fall-b {
+  0%   { transform: translate(0, -16vh); }
+  22%  { transform: translate(-2.6vw, 6vh); }
+  45%  { transform: translate(2vw, 30vh); }
+  68%  { transform: translate(-2.2vw, 58vh); }
+  86%  { transform: translate(1.6vw, 88vh); }
+  100% { transform: translate(-1vw, 118vh); }
+}
+@keyframes fv-petal-fall-c {
+  0%   { transform: translate(0, -20vh); }
+  18%  { transform: translate(1.8vw, 4vh); }
+  38%  { transform: translate(-2.4vw, 26vh); }
+  58%  { transform: translate(1.4vw, 50vh); }
+  78%  { transform: translate(-1.6vw, 76vh); }
+  100% { transform: translate(2vw, 118vh); }
+}
+@keyframes fv-petal-fall-d {
+  0%   { transform: translate(0, -14vh); }
+  25%  { transform: translate(-1.6vw, 10vh); }
+  50%  { transform: translate(2.2vw, 34vh); }
+  75%  { transform: translate(-2vw, 62vh); }
+  90%  { transform: translate(1vw, 92vh); }
+  100% { transform: translate(-1.4vw, 118vh); }
+}
+
+@keyframes fv-petal-spin-cw  { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+@keyframes fv-petal-spin-ccw { from { transform: rotate(0deg); } to { transform: rotate(-360deg); } }
+
+.fv__petal-img--cw  { animation-name: fv-petal-spin-cw; }
+.fv__petal-img--ccw { animation-name: fv-petal-spin-ccw; }
+
+/* 花びら2〜12・14〜15（13枚。元は1〜15の15枚だったが、本人指摘により
+   fv-petal-01＝角で切れて不自然だった1枚、fv-petal-13＝左辺が直線に
+   切れて不自然だった大きめの赤い花びらの、計2枚を非表示化のうえ削除、
+   詳細は下記参照）：大きめ3枚（2・4・5、元レイヤー3）＋小さめ10枚
+   （6〜12・14・15、元レイヤー7）。widthは切り出し画像の実寸比率、
+   left/duration/delayは画面内に散らばって見えるよう1枚ずつ変えてある。
+   ▼本人指摘「下まで落ちるまでの速度を3秒早めて」への対応：
+   各花びらのanimation-duration（＝画面上端付近から下端付近まで
+   1周する時間）を、元の値から一律3秒差し引いた（速く感じるように
+   短縮）。delayは相対的な開始タイミングのズレ用なのでそのまま
+   （duration変更後もCSSの負のdelayはduration基準で自動的に
+   モジュロ計算されるため、値を揃え直す必要はない）。 */
+.fv__petal--2  { left: 55%; width: 8.89vw; animation-name: fv-petal-fall-b; animation-duration: 23s; animation-delay: -14s; }
+.fv__petal--3  { left: 78%; width: 4.58vw; animation-name: fv-petal-fall-c; animation-duration: 15s; animation-delay: -9s; }
+.fv__petal--4  { left: 30%; width: 5.14vw; animation-name: fv-petal-fall-d; animation-duration: 17s; animation-delay: -1s; }
+.fv__petal--5  { left: 88%; width: 7.36vw; animation-name: fv-petal-fall-a; animation-duration: 21s; animation-delay: -19s; }
+.fv__petal--6  { left: 15%; width: 3.85vw; animation-name: fv-petal-fall-b; animation-duration: 13s; animation-delay: -6s; }
+.fv__petal--7  { left: 65%; width: 5.63vw; animation-name: fv-petal-fall-c; animation-duration: 18s; animation-delay: -11s; }
+.fv__petal--8  { left: 8%;  width: 2.33vw; animation-name: fv-petal-fall-d; animation-duration: 11s; animation-delay: -2s; }
+.fv__petal--9  { left: 42%; width: 4.34vw; animation-name: fv-petal-fall-a; animation-duration: 16s; animation-delay: -16s; }
+.fv__petal--10 { left: 92%; width: 6.11vw; animation-name: fv-petal-fall-b; animation-duration: 20s; animation-delay: -8s; }
+.fv__petal--11 { left: 22%; width: 2.19vw; animation-name: fv-petal-fall-c; animation-duration: 12s; animation-delay: -13s; }
+.fv__petal--12 { left: 70%; width: 2.85vw; animation-name: fv-petal-fall-d; animation-duration: 14s; animation-delay: -4s; }
+.fv__petal--14 { left: 12%; width: 6.35vw; animation-name: fv-petal-fall-b; animation-duration: 17s; animation-delay: -17s; }
+.fv__petal--15 { left: 82%; width: 5.07vw; animation-name: fv-petal-fall-c; animation-duration: 15s; animation-delay: -5s; }
+
+.fv__petal--3  .fv__petal-img { animation-duration: 20s; }
+.fv__petal--5  .fv__petal-img { animation-duration: 30s; }
+.fv__petal--7  .fv__petal-img { animation-duration: 18s; }
+.fv__petal--10 .fv__petal-img { animation-duration: 24s; }
+.fv__petal--12 .fv__petal-img { animation-duration: 16s; }
+.fv__petal--15 .fv__petal-img { animation-duration: 19s; }
+
+/* 回転させない花びらは、全部が同じ向きを向いて並んでいるように
+   見えないよう、静止した傾きだけ個別に付けている（--cw/--ccwクラスが
+   無い＝アニメーションしないimg要素なので、通常のtransformが
+   そのまま効く）。 */
+.fv__petal--2  .fv__petal-img { transform: rotate(-12deg); }
+.fv__petal--4  .fv__petal-img { transform: rotate(18deg); }
+.fv__petal--6  .fv__petal-img { transform: rotate(-20deg); }
+.fv__petal--8  .fv__petal-img { transform: rotate(25deg); }
+.fv__petal--9  .fv__petal-img { transform: rotate(-15deg); }
+.fv__petal--11 .fv__petal-img { transform: rotate(12deg); }
+.fv__petal--14 .fv__petal-img { transform: rotate(22deg); }
+
+@media (prefers-reduced-motion: reduce) {
+  .fv__petal,
+  .fv__petal-img { animation-play-state: paused; }
+}
+
+/* ---------------- 上下の HAPPY WEDDING 帯（AU-02 無限マーキー） ---------------- */
+
+.fv__band {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  height: 6.9444vw;           /* 100 / 1440 * 100 */
+  min-height: 34px;
+  max-height: 62px;
+  display: flex;
+  align-items: center;
+  border-top: clamp(1px, 0.1389vw, 2px) solid #fff;
+  border-bottom: clamp(1px, 0.1389vw, 2px) solid #fff;
+  overflow: hidden;
+  z-index: 2;
+}
+
+.fv__band--top    { top: 0; }
+.fv__band--bottom { bottom: 0; }
+
+/* 本人指示「上のカルーセルの文字を下と同じ（HAPPY WEDDING⇄RYO&MIYUの
+   交互）にしたい」で上帯を下帯と同じ構成にした際、1トラック（ループの
+   1周分）の幅が画面幅より短いと、translateX(-50%)で1周分流れる途中に
+   右端へ何も無い隙間が出ることを確認した（1920px幅で1トラック約1,580px。
+   下帯も同じ構成だったため元から同じ問題があった）。各トラックを
+   「HAPPY WEDDING＋RYO&MIYU」の2ペア→4ペアに増やして2560px幅でも
+   画面幅を十分に超えるようにし、トラックが2倍に伸びたぶん流れる速さ
+   （px/秒）が変わらないよう周期も22s→44sへ2倍にしている。 */
+.fv__marquee {
+  display: flex;
+  width: max-content;
+  animation: fv-marquee 44s linear infinite;
+}
+
+.fv__band--bottom .fv__marquee {
+  animation-direction: reverse; /* 上下で流れる向きを変えて対比を出す */
+}
+
+.fv__marquee-track {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.fv__marquee-item {
+  flex-shrink: 0;
+  padding: 0 2.2222vw;         /* 32 / 1440 * 100 相当の余白 */
+  font-family: "Dela Gothic One", "Noto Sans JP", sans-serif;
+  font-weight: 400;
+  font-style: normal;
+  font-size: clamp(14px, 3.3333vw, 48px); /* 48 / 1440 * 100、小画面での可読性を確保 */
+  line-height: 0.6909;
+  letter-spacing: -0.1333vw;   /* -1.92 / 1440 * 100 */
+  color: #fff;
+  white-space: nowrap;
+}
+
+.fv__marquee-item--name .fv__amp {
+  letter-spacing: 0.1111vw;    /* 1.6 / 1440 * 100 */
+}
+
+@keyframes fv-marquee {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fv__marquee { animation-play-state: paused; }
+}
+
+/* ---------------- スマホ版（768px以下） ---------------- */
+@media (max-width: 768px) {
+  .fv__band {
+    min-height: 26px;
+  }
+  .fv__marquee-item {
+    padding: 0 1.6vw;
+  }
+}
+
+/* ==========================================================
+   ABOUT
+   Figmaの元グラフィック（トンネル背景のSVG）はネットワーク制限で
+   取得できなかったため、5つの同心円の直径だけをFigmaの座標データ
+   から拾い、radial-gradientで再現している。色は目視の近似値。
+   正確な色/形が必要な場合はFigma側で1枚のPNG/SVGに書き出して
+   送ってもらえれば、そのまま画像に差し替えられる。
+=========================================================== */
+.about {
+  width: 100%;
+  background: #FCEFAE;
+}
+
+.about__stage {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1440 / 900;
+  overflow: hidden;
+}
+
+/* MEMORYが左下から重なって現れる間、pager.jsが.page__frameへ直接
+   transform:translate()を当てるので、ブラウザに前もって知らせておく
+   （ABOUTは固定のままなのでtransformは当てない）。 */
+#page-memory .page__frame {
+  will-change: transform;
+}
+
+/* トンネル背景：Figmaのdev modeで実測した5枚のSubtractレイヤーの
+   left/top/width/height(1440x900基準)をそのまま%に変換して再現。
+   微妙に真円じゃない・中心がズレているのもFigmaの実測値通り。 */
+.about__tunnel {
+  position: absolute;
+  inset: 0;
+}
+
+.about__ring {
+  position: absolute;
+  border-radius: 50%;
+}
+
+/* 各輪のシャドウはinset（内側）にして、正面から光を当てたような
+   ナチュラルな立体感にしている。offsetは付けず(0 0)左右非対称の
+   「どこかから斜めに光が当たっている」感を消し、黒も薄め(0.10〜0.18)
+   に抑えて最近のWebでよく見る柔らかい陰影に寄せた。
+   中心に近い輪ほど少しだけ濃く・締めていくことで、中心に向かって
+   奥へ沈んでいく（手前の外側の輪が高く、中心が低い＝トンネルの奥）
+   ように見せている。以前は外向きのdrop-shadowで、逆に中心（内側の輪）
+   が手前に浮き上がって見えてしまっていたのを直した。 */
+.about__ring--5 {
+  left: -30.625%;
+  top: -63.89%;
+  width: 162.78%;
+  height: 240.67%;
+  background: #FFFBE9;
+  box-shadow: inset 0 0 1.4vw rgba(0, 0, 0, 0.10);
+}
+
+/* Subtract（#FFF4C6）: left -141 top -345 w1743 h1659 */
+.about__ring--4 {
+  left: -9.79%;
+  top: -38.33%;
+  width: 121.04%;
+  height: 184.33%;
+  background: #FFF4C6;
+  box-shadow: inset 0 0 1.3vw rgba(0, 0, 0, 0.12);
+}
+
+/* Subtract（#FFEDA3）: left 36 top -195 w1391 h1357 */
+.about__ring--3 {
+  left: 2.5%;
+  top: -21.67%;
+  width: 96.60%;
+  height: 150.78%;
+  background: #FFEDA3;
+  box-shadow: inset 0 0 1.2vw rgba(0, 0, 0, 0.14);
+}
+
+/* Subtract（#FFE06A）: left 181 top -59 w1079 h1086 */
+.about__ring--2 {
+  left: 12.57%;
+  top: -6.56%;
+  width: 74.93%;
+  height: 120.67%;
+  background: #FFE06A;
+  box-shadow: inset 0 0 1.0vw rgba(0, 0, 0, 0.16);
+}
+
+/* Subtract（内側、#FDD22B）: left 316 top 78 w807.26 h785。
+   一番奥＝一番沈んで見えてほしい輪なので、ここが一番濃い。 */
+.about__ring--1 {
+  left: 21.94%;
+  top: 8.67%;
+  width: 56.06%;
+  height: 87.22%;
+  background: #FDD22B;
+  box-shadow: inset 0 0 0.9vw rgba(0, 0, 0, 0.18);
+}
+
+/* ABOUT／このページについての見出しは、以前は常に同じ位置に固定
+   だったが、「本文の一番上」として扱い、本文と同じスクロール量だけ
+   一緒に動くようにした（pager.jsが--about-heading-shiftを都度更新）。
+   静止時（本文スクロール前）はサークルの中央に来る位置を基準にしている。 */
+.about__arc-text {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 2;
+  transform: translateY(var(--about-heading-shift, 0px));
+}
+
+.about__arc-head,
+.about__arc-sub {
+  font-family: "Dela Gothic One", "Noto Sans JP", sans-serif;
+  fill: #fff;
+}
+
+.about__arc-head { font-size: 72px; }
+.about__arc-sub  { font-size: 20px; letter-spacing: 2px; }
+
+.about__photo {
+  position: absolute;
+  left: 50%;
+  top: 19.33%;               /* 174 / 900 * 100 */
+  width: 41.39%;              /* 596 / 1440 * 100 */
+  aspect-ratio: 1 / 1;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  overflow: hidden;
+  background: #6b6b6b;
+  z-index: 1;
+}
+
+.about__photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.about__photo-label {
+  display: none;
+  position: absolute;
+  inset: 0;
+  align-items: center;
+  justify-content: center;
+  font-family: "Noto Sans JP", sans-serif;
+  font-size: clamp(12px, 1.4vw, 20px);
+  color: #fff;
+  background: rgba(0,0,0,0.45);
+}
+
+.about__photo.is-placeholder .about__photo-label { display: flex; }
+
+/* 写真・背景は固定のまま、本文だけがこの枠の中でスクロールする構造。
+   .about__text はフレーム全高(0〜900)ぶんのスクロール可能な「窓」。
+   中の.about__text-innerに画面高さの半分ぶんの上下パディングを
+   付けているので、
+   　・スクロール前：最初の行が画面中央に来る
+   　・スクロールし切った時：最後の行が画面中央で止まる
+   （＝文章の頭も終わりも必ず画面中央を通過する。TY-15の判定ラインと同じ位置）。
+   line-heightはFigmaカンプ通り240%(2.4)のまま。 */
+.about__text {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  transform: translateX(-50%);
+  width: 27.7%;                /* 399 / 1440 * 100 */
+  height: 100%;
+  overflow: hidden;             /* scrollTopはpager.jsがwindowのscrollYから直接操作する */
+  z-index: 3;
+  /* 中央付近だけくっきり、上下端は次のページ/FVへ向けてフェード */
+  mask-image: linear-gradient(to bottom, transparent 0%, #000 32%, #000 68%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 32%, #000 68%, transparent 100%);
+}
+
+.about__text::-webkit-scrollbar { display: none; } /* Chrome/Safari */
+
+.about__text-inner {
+  /* 450/399*100%。.about__text-innerの%パディングは
+     親(.about__text、幅399px相当)の"幅"基準になるCSS仕様を利用して、
+     フレーム高さ(900px)の半分＝450pxぶんの余白を上下に作っている。 */
+  padding-top: 112.8%;
+  padding-bottom: 112.8%;
+  text-align: center;
+  font-family: "Noto Sans JP", sans-serif;
+  font-weight: 600; /* 本人の希望で500から一段階太く。Noto Sans JPをGoogle Fontsから読み込み済み（index.html） */
+  font-size: clamp(12px, 1.6667vw, 24px);  /* 24 / 1440 * 100 */
+  line-height: 2.4;             /* Figmaカンプ通り(240%) */
+  letter-spacing: clamp(2px, 0.3333vw, 4.8px);
+  color: rgba(255, 255, 255, 0.8);
+  text-shadow: 0 4px 3px rgba(0, 0, 0, 0.3);
+  /* サークルが広がっている間は本文を出さない、というこだわりを
+     ここでも踏襲：interactions.jsが'about:enter'（サークルが完全に
+     開いた瞬間）を受けて.is-visibleを付けるまで非表示にしておく。 */
+  opacity: 0;
+  transition: opacity 0.4s ease;
+}
+
+.about__text-inner.is-visible {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .about__text-inner { transition: none; }
+}
+
+.about__text p { margin: 0; }
+.about__text-space { line-height: 1.2; }
+
+/* ---- TY-15 読み進め強調：スクロール量と文字色を1文字ずつ連動させる ----
+   行やブラーの状態は持たず、各文字(.char)の実際の画面上の位置から
+   interactions.jsが毎フレーム「アクティブ(#FFFFFF) / 非アクティブ
+   (#B2B2B2)」を直接計算してinline styleで当てている。1行の中では
+   左の文字から順にアクティブへ切り替わる。しきい値越えの一度きりの
+   トリガーではなく毎フレーム位置から再計算する連続関数なので、
+   スクロールを戻しても同じ道を逆再生するように自然に戻っていく
+   （行き/帰り両方で成立する）。 */
+.about__text [data-readline] .char {
+  display: inline-block;
+  transition: color 0.2s ease-out; /* 本人指示：色の切り替えを瞬時ではなく0.2sふわっとさせる */
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .about__text [data-readline] .char { transition: none; }
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* prefers-reduced-motion: reduce の場合の文字色は
+   interactions.js側でJS実行時に既読色を直接設定して固定している
+   （＝ここでは何もしない）。 */
+
+@media (max-width: 768px) {
+  .about__text { width: 60%; }
+  .about__arc-head { font-size: 34px; }
+  .about__arc-sub  { font-size: 11px; }
+}
+
+/* ==========================================================
+   MEMORY
+   Figmaが横に伸ばしたカンプ(実測3661x900、通常フレームの約2.54倍幅)を
+   元に再現。.memory__stageは通常フレームと同じ1440x900のビューポート
+   （overflow:hiddenの「窓」）のまま、その中に254.2361vw(=3661/1440)幅の
+   .memory__canvasを敷き、pager.jsがこれを左へtranslateXしてパンさせる
+   ことで横スクロールのように写真を流していく。
+   キャンバス内の子要素はすべて vw 単位（figma実測px / 1440 * 100vw）で
+   配置している。vwは常にビューポート幅を基準にする単位なので、
+   キャンバス自身がビューポートより広くても、ABOUTなどの他セクションと
+   同じ「1440px基準」の縮尺のまま矛盾なく配置できる。
+   2→3 の遷移（ABOUTは固定のまま、MEMORYが左から水平に重なって現れ、
+   そのまま同じ動きでキャンバスが右へ流れていく）は pager.jsが
+   .page__frameと.memory__canvasに直接transform:translateX()を当てて
+   実現する（このファイルでは静的な見た目だけを定義し、遷移の
+   transitionは無し＝スクラブ追従の慣性だけで十分滑らかになる）。
+=========================================================== */
+.memory {
+  width: 100%;
+  background: #282828;
+}
+
+.memory__stage {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1440 / 900;
+  overflow: hidden;
+}
+
+/* MEMORY専用の例外対応（FVの上下帯と全く同じ原因・同じ対応）：
+   .memory__band（上下のイエロー帯＝フィルムのスプロケット穴デザイン）は
+   フレームの上端ギリギリ(top:0)・下端ギリギリ(top:55.5556vw＝800/900の
+   位置)に配置されている。他セクション共通の「.page__frameを常にcover
+   (はみ出た分は上下左右均等にクリップ)」ルールのままだと、画面の実効
+   アス比が1440/900(=1.6)より縦長になる環境（MacBook Air 15インチを
+   ブラウザで開いた時など）でフレーム高さがビューポートを超え、その
+   超過ぶんが上下で切り落とされて上下の帯が見切れてしまう
+   （本人指摘で発覚。FVの上下マーキー帯で起きたのと同じ現象）。
+   FVの時と同じ対応：MEMORYのフレーム／ステージだけビューポートに
+   常にぴったり一致させ(cover方式をやめる)、はみ出し＝クリップが
+   そもそも起きないようにする。 */
+#page-memory .page__frame {
+  width: 100vw;
+  height: 100vh;
+  aspect-ratio: auto;
+}
+
+/* .memory__stageのheight:100%が効くためには、祖先チェーン全部
+   （.memory）にも明示的な高さが要る（FVの.fvと同じ理由）。 */
+#page-memory .memory {
+  height: 100%;
+}
+
+#page-memory .memory__stage {
+  width: 100%;
+  height: 100%;
+  aspect-ratio: auto;
+}
+
+.memory__canvas {
+  position: absolute;
+  left: 0;
+  top: 0;
+  /* 元はFigmaカンプの3661px相当(254.2361vw)。本人指示「写真がここに
+     纏まっちゃってるので、セクション自体の長さ増やしていいので、
+     散らばらせたい」を受けて372vwに延長（パンの距離はpager.jsが
+     このキャンバスの実測幅から自動で計算するので、MEMORYの
+     スクロール区間も同じ割合で長くなる）。写真の配置はindex.html参照。 */
+  width: 372vw;
+  height: 100%;
+}
+
+/* フォトギャラリー：Figmaカンプの実測位置・サイズそのまま(グリッドでは
+   なく余白を空けたランダムな散らし配置)。各要素のleft/top/width/height
+   はindex.html側のinlineスタイルでvw単位で渡している。 */
+.memory__gallery {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+
+.memory__photo {
+  position: absolute;
+  margin: 0;
+  background: #3a3a3a;  /* 実写真が読み込まれるまでの下地色 */
+  overflow: hidden;
+  /* パララックス：写真ごとの奥行き(data-depth属性)に応じて、キャンバスの
+     パン量に対する追加のオフセットをassets/js/pager.jsのsetMemoryPan()が
+     transformとして毎フレーム与える（1より大きいほど手前・速く、
+     小さいほど奥・ゆっくり動く）。
+     ※以前ここに will-change:transform を付けていたが、横に長い
+     .memory__canvas（3661px超）の中で11個の写真すべてを個別の
+     コンポジットレイヤーに昇格させてしまい、GPU側のタイル分割の
+     継ぎ目が薄い縦線として見えてしまう不具合の原因になっていたため、
+     削除した（transform自体は通常のアニメーション扱いで十分
+     ハードウェアアクセラレーションされる）。 */
+}
+
+/* 動画カードは他の写真の後ろに隠れて見づらくならないよう、
+   ギャラリー内で常に最前面に来るようにしておく。 */
+.memory__video-card {
+  z-index: 2;
+}
+
+.memory__photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.memory__photo-label {
+  display: none;
+  position: absolute;
+  inset: 0;
+  align-items: center;
+  justify-content: center;
+  font-family: "Noto Sans JP", sans-serif;
+  font-size: clamp(10px, 1vw, 14px);
+  color: #fff;
+  text-align: center;
+  padding: 4px;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.memory__photo.is-placeholder .memory__photo-label { display: flex; }
+
+/* 動画カード：ポスター(先頭フレーム)を表示しておき、クリックで
+   カード内再生に切り替わる（フルスクリーンにはしない）。 */
+.memory__video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: #000;
+}
+
+.memory__video-toggle {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: rgba(0, 0, 0, 0.15);
+  /* <button>要素はデフォルトでcursor:pointerを持つブラウザがあるため、
+     MEMORYセクション全体でブラウザ標準カーソルを消す指定
+     (.memory__stage { cursor: none })が確実に効くよう明示しておく。
+     操作の手がかりはカーソルラベル(PLAY/STOP)側で示す。 */
+  cursor: none;
+}
+
+/* 再生／一時停止アイコン：以前はborderの三角形テクニックだったが、
+   角がカクカクして目立つとの指摘のため、SVGのstroke-linejoin:roundで
+   YouTubeの再生アイコンくらい角を丸めた形に差し替えた
+   （path/rectはindex.html側）。 */
+.memory__video-icon {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 34px;
+  height: 34px;
+  transform: translate(-50%, -50%);
+  fill: #fff;
+  stroke: #fff;
+  stroke-width: 3;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
+  transition: opacity 0.2s ease;
+}
+
+.memory__video-icon--play { transform: translate(-46%, -50%); } /* 三角形の視覚的重心を中央に補正 */
+.memory__video-icon--pause { opacity: 0; }
+
+/* 再生中は三角→縦棒2本に切り替え、常時は薄く、ホバー時だけ
+   はっきり見せる（動画の邪魔をしないように）。 */
+.memory__video-card.is-playing .memory__video-icon--play { opacity: 0; }
+.memory__video-card.is-playing .memory__video-icon--pause { opacity: 1; }
+
+.memory__video-toggle { opacity: 0.85; }
+.memory__video-card.is-playing .memory__video-toggle { opacity: 0; }
+.memory__video-card:hover .memory__video-toggle,
+.memory__video-card.is-playing:hover .memory__video-toggle { opacity: 1; }
+
+@media (hover: hover) and (pointer: fine) {
+  /* 独自のカーソルラベルを出す間、ブラウザ標準カーソルは消しておく。
+     写真の上だけでなく、MEMORYセクション全体（背景含む）で
+     カーソルラベルが出るようになったので、.memory__stage全体に適用する。 */
+  .memory__stage { cursor: none; }
+}
+
+/* 「もっと思い出を振り返る」ボタン（MEMORY下層ページへの入口）。
+   本人構想「ボタンをトップページのmemoryセクションの終わりに作る」→
+   その後の本人指示「もっと見るボタンを最後の画面の中央下辺りに配置したい」
+   を受けて、最後の画面（このMEMORYはスクロールが進むほどキャンバスが
+   左端側へ戻っていく作りなので、最後の画面＝キャンバスの左端0〜100vw）の
+   中央・下の帯のすぐ上に置いた。最後の画面の写真（MEMORY 02・04・動画）は
+   中央下を空けて配置してある（index.html）。サイト内の他のボタン
+   （TOPへ戻る・MESSAGEに戻る）と同じ白いピル＋濃い枠線＋ずらした影。
+   .memory__stageはカスタムカーソルのためcursor:noneなので、ここだけ
+   通常の指カーソルに戻している。 */
+.memory__more {
+  position: absolute;
+  left: 50vw;
+  bottom: calc(6.9444vw + clamp(16px, 2.2vw, 36px)); /* 下の帯のすぐ上 */
+  transform: translateX(-50%);
+  z-index: 4;                    /* 写真より手前・上下の帯(5)より奥 */
+  display: inline-flex;
+  align-items: center;
+  gap: clamp(8px, 0.9vw, 14px);
+  height: clamp(40px, 3.9vw, 58px);
+  padding: 0 clamp(8px, 0.8vw, 12px) 0 clamp(16px, 1.8vw, 28px);
+  border: 2px solid #282828;
+  border-radius: 999px;
+  background: #FFFDF8;
+  color: #282828;
+  box-shadow: 4px 4px 0 #FDD22B;
+  font-family: "Noto Sans JP", sans-serif;
+  font-size: clamp(12px, 1.15vw, 17px);
+  font-weight: 700;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.memory__more:hover { transform: translateX(-50%) translateY(-3px); box-shadow: 4px 7px 0 #FDD22B; }
+.memory__more:focus-visible { outline: 3px solid #FD2B94; outline-offset: 3px; }
+.memory__more-arrow {
+  display: grid;
+  place-items: center;
+  width: clamp(26px, 2.5vw, 38px);
+  height: clamp(26px, 2.5vw, 38px);
+  border-radius: 50%;
+  background: #FDD22B;
+  border: 2px solid #282828;
+}
+.memory__more-arrow svg { width: 44%; height: 44%; }
+
+/* 上下のイエロー帯：フィルムのスプロケット穴を思わせる白いピルを
+   均等間隔(justify-content:space-between)で並べている。キャンバス全幅
+   (=100%)にぴったり合わせているので、横に伸びても継ぎ目なく続く。 */
+.memory__band {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  height: 6.9444vw;              /* 100 / 1440 * 100 */
+  background: #FDD22B;
+  z-index: 5;                    /* 写真より必ず手前に来るように */
+}
+
+.memory__band--top {
+  top: 0;
+  box-shadow: 0 0.4861vw 0.2778vw 0.4167vw rgba(21, 21, 21, 0.59);
+}
+
+.memory__band--bottom {
+  /* 以前は「top: 55.5556vw（=800/900の位置）」という、900px基準の
+     縦位置をvw(横基準)単位で近似する書き方だった。これはフレームの
+     アス比がちょうど1440/900(=1.6)の時にしか正しい位置にならず、
+     上のMEMORY専用フレーム修正（フレームをビューポートに常にぴったり
+     一致させる＝アス比1.6から外れることがある）と組み合わせると、
+     画面のアス比によってはこの帯が実際のフレーム下端よりズレて
+     見切れてしまっていた（実測で確認：1512x832で帯がほぼ全部
+     画面外に落ちていた）。上の帯が「top: 0」でフレーム上端に直接
+     貼りついているのと同じように、下の帯も「bottom: 0」でフレーム
+     下端に直接貼りつける方式に直し、フレームの実際のアス比が
+     どうであっても必ず画面の下端に来るようにした。 */
+  bottom: 0;
+  box-shadow: 0 0.4861vw 0.2778vw 1.3889vw rgba(21, 21, 21, 0.59);
+}
+
+.memory__sprockets {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  height: 4.1667vw;               /* 60 / 1440 * 100 */
+  display: flex;
+  justify-content: space-between;
+  pointer-events: none;
+}
+
+/* .memory__sprocketsは.memory__bandの中にネストされているので、
+   topは常に「自分の親帯の中での相対位置」(=帯の高さ6.9444vwの中で
+   上下中央になる1.3889vw)でよい。以前はキャンバス基準の絶対値
+   (56.9444vw)を誤って指定していたため、下帯のスプロケットだけ
+   帯の外（画面下・見えない位置）にずれてしまっていた。 */
+.memory__sprockets--top,
+.memory__sprockets--bottom { top: 1.3889vw; }    /* 20 / 1440 * 100 */
+
+.memory__sprocket {
+  flex: 0 0 5.5556vw;            /* 80 / 1440 * 100。vw基準なのでキャンバス幅が
+                                     変わっても実寸(figma px)が保たれる */
+  background: #FFFFFF;
+  border-radius: 0.6944vw;       /* 10 / 1440 * 100 */
+}
+
+/* ---------------- カーソルラベル ----------------
+   写真(.memory__photo)にマウスが重なっている間だけ、円形バッジが
+   マウス位置に追従して出現する。position:fixedを正しく効かせる必要が
+   あるため、この要素はページ構造(.page__frame)の外＝body直下に置いて
+   いる。MEMORYが重なって現れる演出で.page__frameにtransformがかかって
+   も、その外にあるこの要素の座標系には影響しない。
+   通常時：MEMORYの文字を円周上に流したリング表示（ABOUTの円弧見出しと
+   同じtextPathの手法を流用）。data-cursor="play"の要素（動画カード）の
+   上ではPLAYの文字だけを出す表示に切り替わる（クリックでカード内再生。
+   挙動は assets/js/memory-video.js）。 */
+/* 外側(.memory__cursor)はJSが毎フレーム transform: translate() だけを
+   書き換えて位置を追従させる。拡大縮小/フェードのtransitionは内側
+   (.memory__cursor-inner)にまとめて、JSの毎フレーム書き換えと
+   CSS transitionが同じtransformプロパティ上でぶつからないようにしている。 */
+.memory__cursor {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+  z-index: 50;
+}
+
+.memory__cursor-inner {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100px;
+  height: 100px;
+  margin-left: -50px;
+  margin-top: -50px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #5BC0EB;
+  border-radius: 70px;
+  opacity: 0;
+  transform: scale(0.6);
+  transition: opacity 0.25s ease, transform 0.25s ease, width 0.25s ease, height 0.25s ease, margin 0.25s ease;
+}
+
+.memory__cursor.is-visible .memory__cursor-inner { opacity: 1; transform: scale(1); }
+
+.memory__cursor.is-play .memory__cursor-inner,
+.memory__cursor.is-more .memory__cursor-inner {
+  width: 110px;
+  height: 110px;
+  margin-left: -55px;
+  margin-top: -55px;
+}
+
+/* MEMORYリング ⇔ PLAY/STOPラベルの切り替えは、display:none/blockだと
+   瞬時に切り替わってしまいトランジションが効かないため、両方を
+   同じ位置に重ねて配置しopacityでクロスフェードさせる
+   （is-playで見た目が入れ替わる）。 */
+.memory__cursor-ring {
+  position: absolute;
+  inset: 0;
+  animation: memory-cursor-spin 7s linear infinite;
+  opacity: 1;
+  transition: opacity 0.3s ease;
+}
+
+.memory__cursor.is-play .memory__cursor-ring,
+.memory__cursor.is-more .memory__cursor-ring { opacity: 0; }
+
+.memory__cursor-ring-text {
+  font-family: "Dela Gothic One", "Noto Sans JP", sans-serif;
+  font-size: 9px;
+  letter-spacing: 1px;
+  fill: #fff;
+}
+
+.memory__cursor-play {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.memory__cursor.is-play .memory__cursor-play { opacity: 1; }
+
+/* PLAY ⇔ STOP のテキスト自体も、同じ理由で2つを重ねてopacityで
+   クロスフェードする（textContentの書き換えはトランジションできない
+   ため）。is-stopは動画の再生中にJS側(memory-cursor.js)が付け外しする。 */
+.memory__cursor-play-text {
+  position: absolute;
+  font-family: "Dela Gothic One", "Noto Sans JP", sans-serif;
+  font-weight: 400;
+  font-size: 16px;
+  letter-spacing: 0.5px;
+  color: #fff;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.memory__cursor-play-text--play { opacity: 1; }
+.memory__cursor.is-stop .memory__cursor-play-text--play { opacity: 0; }
+.memory__cursor.is-stop .memory__cursor-play-text--stop { opacity: 1; }
+
+/* 「もっと思い出を振り返る」ボタンの上ではMORE表示に切り替える
+   （PLAY/STOPと同じopacityクロスフェードの仕組みを流用）。 */
+.memory__cursor-more {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: "Dela Gothic One", "Noto Sans JP", sans-serif;
+  font-weight: 400;
+  font-size: 16px;
+  letter-spacing: 0.5px;
+  color: #fff;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.memory__cursor.is-more .memory__cursor-more { opacity: 1; }
+
+@keyframes memory-cursor-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .memory__cursor-inner { transition: none; }
+  .memory__cursor-ring { animation: none; transition: none; }
+  .memory__cursor-play,
+  .memory__cursor-play-text,
+  .memory__cursor-more { transition: none; }
+}
+
+@media (max-width: 768px) {
+  .memory__cursor-ring-text { font-size: 8px; }
+}
+
+/* ==========================================================
+   MESSAGE（Wedding_MASSEGE / Figma node 820:9341）
+   フレーム基準は他セクションと同じ1440x900。すべての寸法・位置を
+   figma_px / 1440 * 100 の vw値に変換している（ABOUT/MEMORYと同じ変換式。
+   frame幅がvw基準でほぼ100vwになる設計のため、縦方向の値にもそのまま
+   同じ換算式を使って問題ない＝frame自体がaspect-ratio: 1440/900で
+   縦横同じ縮尺になっているため）。
+
+   3層構成：
+   1. .message__yellow-bg … 全面のイエローグラデーション背景
+   2. .message__bg-rise（.message__bg-tiles を内包） … ぼかし済みの
+      kaomojiアプリアイコン風タイル。タイトル・見出し・カードと同じく
+      .message__stage自体のtranslateY（フェーズD／setMessageEnter）に
+      そのまま乗って現れるだけで、タイル側に別途スクロール連動の
+      アニメーションは掛けていない（以前はタイル外側だけ一段遅れて
+      「下から登り切って固定」する独自のtranslateYを掛けていたが、
+      本人指示により「MESSAGEの文字などと一緒に固定」でよいとのことで
+      削除した）。内側の.message__bg-tilesだけは常時CSSアニメーションで
+      斜め方向へゆっくりスライドし続ける（BG-15 流れる斜めストライプ、
+      スクロール量とは無関係）。
+   3. .message__scene（.message__card を内包） … 中央のメールアイコン風
+      カード。scrollに連動して上から回転しながら現れ、正面中央で固定
+      （フェーズD）。固定後は is-settled が付与され、クリック可能＆
+      マウス追従のチルト演出（assets/js/message-card.js）が有効になる。
+=========================================================== */
+
+/* 背景色はここ(.message)ではなく.message__stage内の.message__yellow-bg
+   （pager.jsのフェーズDでtranslateYされる、正しくアニメーションする層）
+   側だけが持つ。以前はここにも同じ黄色の背景色（固定・アニメーション
+   なし）が付いていたため、.message__stageがtranslateYで下から
+   せり上がる動きをしていても、その背後で常にこの.message自体の黄色が
+   フレーム全体を覆ってしまい、結局「瞬時に黄色い画面へ切り替わる」ように
+   見えてしまっていた（本人指摘を受けて発見・削除）。 */
+.message {
+  width: 100%;
+  /* .messageはtranslateYを持たない「素通しのラッパー」（実際に動くのは
+     子の.message__stage）ため、フレーム全体を常に覆ってしまう。
+     is-activeが付いた瞬間（.message__stageがまだ画面下に隠れている
+     間）でも背後のMEMORYのクリック判定を奪わないよう、ここは
+     pointer-events:noneにし、実際に見えている.message__stage側だけで
+     ヒットテストする（MESSAGE→QAの同じ構造の問題を発見した際に、
+     MEMORY→MESSAGE側にも同じ潜在バグがあることに気づき合わせて対応）。 */
+  pointer-events: none;
+}
+
+/* MESSAGEセクション全体（黄色背景・タイル・タイトル・カードをすべて
+   内包する層）。pager.jsのフェーズDで、背景タイルの「下から登り切る」
+   のと同じratioを使ってtranslateYし、セクションそのものが画面下から
+   迫り上がってくるようにしている（以前はここにアニメーションが無く、
+   is-activeが付いた瞬間に黄色背景ごと一気に表示されて「瞬時に画面が
+   切り替わる」ように見えていたための対応）。
+   pointer-events: autoで.message(親)のnoneを打ち消し、実際に画面上へ
+   せり上がってきた分だけクリック／ホバー判定が生きるようにする
+   （translateYで隠れている間はここも画面外にあるので、自然と当たり
+   判定も生じない）。 */
+.message__stage {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1440 / 900;
+  overflow: hidden;
+  will-change: transform;
+  pointer-events: auto;
+}
+
+/* MEMORY→MESSAGEのプッシュ切り替えは、setMemoryExit()と
+   setMessageEnter()が「同じratioぶん、それぞれ自分の高さの100%を
+   translateYする」ことで、両者の継ぎ目が常にぴったり一致する
+   （片方が上へ抜けた量と、もう片方が下から迫り上がった量が
+   自分の高さ基準で完全に対称になる）という仕組みで成立している。
+   これは.page__frameが「MEMORYもMESSAGEも全く同じサイズ・同じ
+   位置」である前提が崩れると途端に破綻する。
+   MEMORYのフィルム帯クリッピング対応で#page-memory .page__frameだけ
+   「ビューポートに常にぴったり一致」に変更した結果、MESSAGE側は
+   従来の「cover（はみ出た分は上下クリップ）」方式のままになり、
+   画面のアス比によっては両者のサイズが食い違って、
+   MEMORY→MESSAGEの継ぎ目に隙間が見えてしまっていた（本人指摘で
+   発覚）。MEMORYと全く同じ「ビューポートに常にぴったり一致」方式を
+   MESSAGE側にも揃えることで、継ぎ目の対称性を復元する。 */
+#page-message .page__frame {
+  width: 100vw;
+  height: 100vh;
+  aspect-ratio: auto;
+}
+
+#page-message .message {
+  height: 100%;
+}
+
+#page-message .message__stage {
+  width: 100%;
+  height: 100%;
+  aspect-ratio: auto;
+}
+
+.message__yellow-bg {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(178deg, #FDD22B 0%, #FFF1BB 60%);
+}
+
+/* ---------------- 背景タイル（登場：フェーズD／常時：斜めスライド） ---------------- */
+
+/* 外側：現在はJSからtransformを掛けていない（.message__stage自体の
+   動きにそのまま乗るだけ）。実測より一回り大きく敷いている
+   （top/bottomに余白）のは、内側の斜めスライド演出(.message__bg-tiles)
+   が端で切れずに済むようにするため。 */
+.message__bg-rise {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -15%;
+  bottom: -15%;
+  overflow: hidden;
+}
+
+/* 内側：常時ゆっくり斜めにスライドし続けるタイル本体（BG-15）。SVG自体に
+   Figma側のfilter: blur(4.95px)が焼き込み済みなので、ここで追加のCSS
+   blurは重ねない（二重ぼかしになるため）。斜めスライド時に端の継ぎ目が
+   見えないよう、実寸より一回り大きく敷いてbackground-repeatで埋める。 */
+.message__bg-tiles {
+  position: absolute;
+  inset: -25%;
+  background-image: url("../img/message_bg_tiles.svg");
+  background-repeat: repeat;
+  background-size: 104.7222vw 59.4444vw; /* SVG実寸 1508x856 / 1440 * 100 */
+  animation: message-bg-slide 46s linear infinite;
+}
+
+@keyframes message-bg-slide {
+  from { background-position: 0 0; }
+  to   { background-position: -104.7222vw -59.4444vw; } /* タイル1枚ぶん斜めに流れて継ぎ目なくループ */
+}
+
+/* ---------------- 見出し（本人支給のグラフィック素材） ---------------- */
+
+.message__title {
+  position: absolute;
+  left: 50%;
+  top: 2.5vw;
+  width: 53.8194vw;    /* 775 / 1440 * 100（画像実寸、アスペクト比は高さautoで維持） */
+  height: auto;
+  transform: translateX(-50%);
+  z-index: 2;
+}
+
+.message__heading {
+  position: absolute;
+  left: 50%;
+  top: 4.479vw;        /* 「MESSAGEの中心に来るように」で計算した5.867vwから、
+                           本人指示で-30px→+10px（1440px基準）調整した位置 */
+  width: 36.875vw;     /* 531 / 1440 * 100 */
+  height: auto;
+  transform: translateX(-50%);
+  z-index: 3;          /* タイトルより手前に重ねる（DOM順でも後だが明示） */
+}
+
+/* ---------------- 中央カード：登場演出の土台（perspective） ---------------- */
+
+.message__scene {
+  position: absolute;
+  left: 31.3889vw;   /* 452 / 1440 * 100 */
+  top: 16.0417vw;     /* 231 / 1440 * 100 */
+  width: 37.2222vw;   /* 536 / 1440 * 100 */
+  height: 34.7222vw;  /* 500 / 1440 * 100 */
+  perspective: 130vw;
+  z-index: 3;
+}
+
+/* 回転しながら上から現れ、正面中央で固定される本体。pager.js（フェーズD）が
+   固定前はtransform/opacityを毎フレーム書き換え、固定した瞬間に
+   is-settledを付与してtransformの制御をmessage-card.js（vanilla-tilt.js
+   によるチルト演出）へ引き継ぐ（同じtransformプロパティを2箇所から
+   同時に触らないための役割分担）。回転中はクリックできないよう
+   pointer-eventsで明示的にブロックし、is-settledが付いて初めて
+   有効化する。回転軸は横方向（rotateY、pager.js側）。
+   backface-visibility自体は.message__card本体には掛けない（このカード
+   自体は「回転する箱」の役割のみで、表裏それぞれの見た目は中の
+   .message__card-face--front/--backが担う「両面カード」構造のため）。 */
+.message__card {
+  position: absolute;
+  inset: 0;
+  transform-style: preserve-3d;
+  transform-origin: center center;
+  will-change: transform;
+  pointer-events: none;
+  opacity: 0;
+}
+
+.message__card.is-settled {
+  pointer-events: auto;
+  cursor: pointer;
+  opacity: 1;
+}
+
+/* 「両面カード」の各面。3Dモデルは使わず、表と裏の2枚の平面を同じ場所に
+   重ねて、それぞれにbackface-visibility:hiddenを掛けるだけのCSSの定番
+   テクニック。裏面だけをあらかじめrotateY(180deg)しておくことで、
+   カード（親の.message__card）が回転した時、表がこちらを向いている
+   間は表面が見え、半回転してこちら向きが入れ替わったところで裏面が
+   ちょうどこちらを向いて見える＝どの角度でも必ずどちらかの面が見えて
+   いる状態になり、以前あった「回転中に完全に消えて見える」問題を
+   解消している。 */
+.message__card-face {
+  position: absolute;
+  inset: 0;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden; /* Safariでの裏面非表示に必要 */
+}
+
+/* 表面：本人支給の封筒アイコン＋バッジ（そのまま）。 */
+.message__card-face--front {
+  z-index: 2;
+}
+
+/* 裏面：本人指示により無地でよいとのことなので、表面の配色（青系
+   グラデーション）に合わせた無地のプレートのみ（アイコンやマークは
+   置かない）。 */
+.message__card-face--back {
+  transform: rotateY(180deg);
+  border-radius: 20%;
+  background: linear-gradient(135deg, #D6DEFE 0%, #4C6EF5 100%);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.25);
+}
+
+/* メールアイコン本体（本人支給のPNG。角丸・グラデーションとも
+   画像側に含まれているので、CSS側で追加の背景・border-radiusは
+   持たない）。 */
+.message__card-envelope {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1;
+  pointer-events: none; /* クリック判定は.message__card側に一本化 */
+}
+
+/* 「20件のメッセージ」バッジ（本人支給のSVG）。sceneの右上、カード本体
+   からはみ出す位置。カード本体と一体でtransformを受けるよう、あえて
+   .message__card-face--frontの子要素にしている（scene直下の兄弟にすると、
+   カードの回転／チルトに連動せず不自然になるため）。 */
+.message__card-badge {
+  position: absolute;
+  left: 24.4444vw;     /* (804-452) / 1440 * 100 */
+  top: -2.3611vw;       /* (197-231) / 1440 * 100 */
+  width: 13.8889vw;     /* 200 / 1440 * 100 */
+  height: 8.3333vw;     /* 120 / 1440 * 100 */
+  z-index: 2;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .message__bg-tiles { animation: none; }
+}
+
+@media (max-width: 768px) {
+  .message__title { top: 1.5vw; width: 70vw; }
+  .message__heading { top: 4.07vw; width: 48vw; }
+}
+
+/* ==========================================================
+   PAGE 5: Q&A（`#page-qa`）
+
+   MESSAGE→QAの切り替えは、MEMORY→MESSAGEと同じ「プッシュ型」：
+   QAはMESSAGEの下の層に最初から存在していて、MESSAGEが画面いっぱい
+   まで収まった状態を土台に、そこから先のスクロールでMESSAGE全体が
+   画面の上へtranslateYで押し出され、入れ替わりにQAが画面の下から
+   現れる（本人指示：「MESSAGEセクションが全画面表示サイズになる／
+   スクロールで上に流れる／下の層(Q&A)が見えてくる」）。
+   仕組みはpager.js側の setMessageExit() / setQaEnter() を参照
+   （setMemoryExit() / setMessageEnter() とまったく同じ考え方）。
+
+   QAが定位置に収まった後は、3問ぶんを順番に送っていく「カード送り」
+   演出になる。もともと本人がcodexで別ファイル(qa.html)として試作して
+   いたものを、(1) 独自のwindow.scrollY購読＋短いCSS transitionという
+   「スクロール本体の慣性スムージングと、CSS transitionによる遅延が
+   二重にかかってもたつく」構成をやめ、pager.js側の慣性スムージング
+   済みprogressYから算出した連続比率(local, 0〜1)だけで駆動する形に
+   一本化し、(2) 質問→回答→ステッカーがポン、ポン、ポンと少しずつ
+   ずれてバウンドしながら現れるタイムラインに設計し直したもの
+   （詳細はassets/js/qa.jsのコメント参照）。
+=========================================================== */
+
+.qa {
+  width: 100%;
+  /* .messageと同じ理由：.qaはtranslateYを持たない素通しラッパーなので、
+     is-activeが付いた瞬間（.qa__stageがまだ画面下に隠れている間）に
+     フレーム全体を覆ってしまい、背後のMESSAGEカードのチルト演出/
+     クリックを奪ってしまう（本人指摘で発覚）。実際に見えている
+     .qa__stage側だけでヒットテストするようpointer-events:noneにする。 */
+  pointer-events: none;
+}
+
+/* QAセクション全体。MESSAGEと同じ「画面下から迫り上がってくる」
+   translateYをpager.jsのフェーズE1で受け取る（.message__stageと
+   同じ扱い）。背景色もMESSAGEの黄色グラデーションを踏襲し、
+   プッシュで切り替わる瞬間に色の継ぎ目が目立たないようにしている。
+   pointer-events: autoで.qa(親)のnoneを打ち消し、実際に画面上へ
+   せり上がってきた分だけクリック／ホバー判定が生きるようにする。 */
+.qa__stage {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1440 / 900;
+  overflow: hidden;
+  background: linear-gradient(178deg, #FFE07A 0%, #FDD22B 55%, #FFC93C 100%);
+  will-change: transform;
+  pointer-events: auto;
+}
+
+/* MESSAGE→QAのプッシュ切り替えも、MEMORY→MESSAGEと全く同じ理由で
+   「両者の.page__frameが同じサイズ・同じ位置」である前提の上に
+   成立している（詳細は#page-message .page__frameのコメント参照）。
+   MESSAGE側をMEMORYと揃えて「ビューポートに常にぴったり一致」方式に
+   したので、QA側も同じ方式に揃えて継ぎ目の対称性を保つ。 */
+#page-qa .page__frame {
+  width: 100vw;
+  height: 100vh;
+  aspect-ratio: auto;
+}
+
+#page-qa .qa {
+  height: 100%;
+}
+
+#page-qa .qa__stage {
+  width: 100%;
+  height: 100%;
+  aspect-ratio: auto;
+}
+
+/* 装飾：斜めの明るい帯（本人がcodexで試作していたqa-stage::beforeの
+   デザインをvw基準に変換して踏襲）。 */
+.qa__bg {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background: linear-gradient(145deg, transparent 0 42%, rgba(255, 255, 255, .38) 42% 73%, transparent 73%);
+  pointer-events: none;
+}
+
+/* 装飾：右下の大きな円弧（同じくqa-stage::afterをvw基準に変換）。 */
+.qa__ring {
+  position: absolute;
+  right: -28vw;
+  bottom: -47vw;
+  z-index: 0;
+  width: 110vw;
+  height: 83vw;
+  border: 0.1389vw solid rgba(255, 255, 255, .5);
+  border-radius: 50%;
+  transform: rotate(-12deg);
+  pointer-events: none;
+}
+
+.qa__heading {
+  position: absolute;
+  top: 4.4vw;
+  left: 50%;
+  z-index: 3;
+  width: min(90vw, 54.1667vw);
+  text-align: center;
+  transform: translateX(-50%);
+}
+
+.qa__heading-title {
+  margin: 0;
+  color: #fff;
+  font-family: "Dela Gothic One", sans-serif;
+  font-size: 9.0278vw;
+  font-weight: 400;
+  line-height: .88;
+  letter-spacing: -.09em;
+  text-shadow: 0.2083vw 0.2778vw 0 rgba(231, 166, 0, .24);
+}
+
+.qa__heading-sub {
+  padding-left: 20%;
+  margin: .1em 0 0;
+  color: #fff;
+  font-family: "Dela Gothic One", sans-serif;
+  font-size: 1.5972vw;
+  line-height: 1.2;
+  text-shadow: 0.1389vw 0.1389vw 0 rgba(231, 166, 0, .24);
+}
+
+.qa__scene {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  width: min(92vw, 77.7778vw);
+  margin: 0 auto;
+}
+
+/* 吹き出し（質問／回答）共通。opacity・scale・yはすべてqa.js側が
+   毎フレーム（pager.jsから渡される連続比率から）CSS変数として
+   セットする。ここにtransitionは持たせない——スクロール自体が
+   pager.js側で慣性スムージング済みなので、ここでさらにtransitionを
+   足すと「スクロールの遅延」と「transitionの遅延」が二重にかかって
+   もっさりした動きになってしまう（本人が気にしていた「トランジション
+   がおかしい」の主因）。ポップする動き自体はqa.js側でイージング
+   （easeOutBack）を計算して連続的な値として渡しているので、
+   transitionが無くても十分「ポン」と弾む見た目になる。 */
+.qa__bubble {
+  position: absolute;
+  left: 50%;
+  display: grid;
+  place-items: center;
+  text-align: center;
+  font-weight: 700;
+  line-height: 1.6;
+  transform-origin: center;
+  will-change: transform, opacity;
+}
+
+/* 吹き出し本体：以前はCSSで角丸ボックス＋:after疑似要素の三角形
+   （しっぽ）を組んで描いていたが、本人から送付された「吹き出し
+   そのものの画像」（縁取りとしっぽが最初から絵として描かれた透過PNG）
+   に差し替えた（本人指摘：「吹き出しが今デザイン崩れてるから、添付の
+   写真使って」）。border／border-radius／background-color／box-shadow
+   と:after（しっぽ）は不要になったので撤去し、代わりに
+   background-imageで画像をそのまま敷いている。画像は1000×500px
+   （横:縦=2:1）で書き出されているので、`aspect-ratio:1000/500`を
+   指定して幅からその比率で高さを自動計算させ、絵が歪まないようにして
+   いる（`background-size:100% 100%`は、ボックス自体が常に画像と
+   同じ2:1になる前提の上で使っているので歪まない）。
+   しっぽは画像の四隅ギリギリまで伸びているが、中央付近（本文が入る
+   位置）ではしっぽの影響を受けず絵の縁が画像の上端ごく近く
+   （実測で高さの5%程度）から始まっているため、本文側のpaddingは
+   従来とほぼ同じ値のままで問題ない。
+   ※本人指摘「吹き出しのサイズが明らかにでかい」「見出しと吹き出しの
+   余白もしっかり確保して」を受けて、幅を約25%縮小（question:
+   43.0556vw→32vw／answer:38.5417vw→29vw／is-long:50vw→38vw）し、
+   縦位置(top)も見出し（`.qa__heading`、上端付近に固定配置）から
+   十分離れるよう下げた（question:33%→40%／answer:60%→66%）。
+   幅が縮んだ分、上下の間隔も相対的に広く見えるようになっている。
+   ※続けて本人指摘「QとAの距離が近いので50pxほど開けてください」を
+   受けて、質問吹き出しのtopを40%→34%に戻す方向で調整（回答側は
+   66%のまま）。幅を縮小したことで見出しとの間隔にはまだ十分な余裕が
+   あったため、質問側だけを少し押し上げることでQ・A間の隙間を
+   1440px基準で約58px（≒40%時点でほぼゼロだった隙間+50px以上）
+   確保しつつ、見出しとの間隔も以前（幅を縮める前の33%時点）より
+   広い状態を維持できる。回答吹き出し側をこれ以上下げると、下部の
+   進行ドット（`.qa__progress`、画面下から6vw）と干渉するため、
+   調整は質問側で行っている。
+   ※続けて本人指摘「Q&Aの吹き出しとアイコンを全体的に今の7割くらいの
+   大きさにしたい。下の吹き出しがインジケータと被ってるしね」を受けて、
+   幅・padding・font-sizeを一律0.7倍に縮小した（question:32vw→22.4vw／
+   answer:29vw→20.3vw／is-long:38vw→26.6vw）。top位置(34%/66%)自体は
+   変えていないが、吹き出しが小さくなった分だけ回答吹き出しの下端が
+   上がり、進行ドットとの重なりも自然に解消される……はずだったが、
+   本番の長文回答に差し替えて幅を46vwまで拡大した際（下のis-long参照）
+   に、top:66%を起点に下方向へ伸びる量がビューポートの縦幅（vh）に
+   対して無視できないサイズになり、結局また進行ドットと被る事態が
+   再発した。
+
+   ※本人指摘「Q&Aだけど、PC版はもっと横に広く使うか。現状はAの吹き出し
+   が、インジケータと被ってるし、改善しないとね」「QとAの文字サイズは
+   一緒にして」を受けて、PC版はQ・Aを「縦に積む」配置から「横に並べる」
+   配置へ組み直した。縦積みのままだと、回答の文字サイズを質問と揃える
+   （＝小さくできない）ぶん吹き出しを広げる必要があり、広げるほど
+   aspect-ratio 1000/500に従って高さも伸びて下（進行ドット）へ迫って
+   いた。横に並べる配置なら、幅を広げても高さは変わらず（top位置は
+   Q・A共通のまま）、ドットのある下端まで距離を保ったまま横方向だけ
+   使える。質問を左寄り(left:25%)・回答を右寄り(left:72%)に配置し、
+   ラベル（Q/Aアイコン）は各吹き出し自身からの相対オフセットなので、
+   自然と2つの吹き出しの中央あたり（隙間）に寄り、外周のコーナー
+   （左上・右下など）がステッカー用に空く。
+   スマホ版は画面が縦に長いぶん横並びにする余地がないため、従来どおり
+   「縦に並べる」配置（top:34%/66%、left:50%で中央揃え）を維持している
+   （@media (max-width: 768px)側で明示的に上書き）。
+
+   ※続けて本人指摘「Q&Aがかなり崩れてるね。Qのアイコンと吹き出しを
+   右側に持ってきて、Aのアイコンと吹き出しを左にしたい。吹き出しが
+   重ならないように、Y軸も多少調整して。画面下にインジケータのドットが
+   あるからそこに重ならない程度にレイアウトして」を受けて、
+   (1) 左右を入れ替え：質問(question)を右寄り(left:72%)・
+       回答(answer)を左寄り(left:25%)に変更（それまでは逆だった）。
+   (2) 上下も揃えず少しずらす：回答は本文が長くis-long時に縦にも
+       伸びる（aspect-ratio 1000/500）ため高い位置(top:36%)に、
+       質問は短文で背が低いぶん低い位置(top:48%)に配置した。横方向で
+       既に住み分けているので上下を完全に揃える必要はなく、あえて
+       少しずらすことで（本人指示の「Y軸も多少調整」）見た目の
+       単調さを避けつつ、万一の実機フォント差で幅の見積もりが
+       ずれても縦にも余裕がある状態にしている。
+   (3) 進行ドット（画面下から6vw）との距離：回答側の最大の高さ
+       （is-long、幅34vw→高さ17vw）でも、top:36%起点なら
+       Playwrightで実測してドットの手前に収まることを確認済み
+       （詳細はis-longのコメント参照）。
+
+   ※続けて本人指摘「QとAの吹き出しとアイコンのY方向の位置を変えたい。
+   Qのセットの方がAよりも若干高い位置にくるようにしたい。ステッカーも
+   適宜移動量に合わせて配置して」を受けて、上下関係を逆転した：
+   質問(question) top:48%→40%（8ポイント上へ）、
+   回答(answer) top:36%→46%（10ポイント下へ）。
+   見出し（下端はおおよそフレーム高の23%あたり）からも進行ドット
+   （画面下から6vw、is-long時でも回答の下端との間に十分な余白がある。
+   (3)参照）からも、この移動後の位置で十分な距離を確認済み
+   （Playwrightで実測。詳細はこの下のverify記録参照）。
+   ステッカー（`assets/js/qa.js`のQA_STICKER_POSITIONS）も、それぞれが
+   左列（回答＝A側）・右列（質問＝Q側）のどちらに属するかに応じて、
+   対応する吹き出しの移動量と同じ向き・同じ量だけtop/bottomの値を
+   ずらした（詳しくはqa.js側のコメント参照）。 */
+.qa__bubble--question {
+  top: 40%;
+  left: 72%;
+  z-index: 3;
+  width: 22.4vw;
+  aspect-ratio: 1000 / 500;
+  padding: 3.15vw 4.2vw 2.1vw;
+  background-image: url("../img/qa_bubble_question.png");
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
+  font-size: 1.1vw;
+  opacity: var(--qa-question-opacity, 0);
+  transform: translate(-50%, var(--qa-question-y, 6vh)) scale(var(--qa-question-scale, .7));
+}
+
+.qa__bubble--answer {
+  top: 46%;
+  left: 25%;
+  z-index: 2;
+  width: 22.4vw;
+  aspect-ratio: 1000 / 500;
+  padding: 3.15vw 4.2vw 2.1vw;
+  background-image: url("../img/qa_bubble_answer.png");
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
+  font-size: 1.1vw;
+  opacity: var(--qa-answer-opacity, 0);
+  transform: translate(-50%, var(--qa-answer-y, 6vh)) scale(var(--qa-answer-scale, .7));
+}
+
+/* 長い回答用：幅を広げるだけで、高さはaspect-ratioに従って自動的に
+   広がる（縦横比を保ったまま拡大するので、絵が伸びて歪むことがない）。
+   ※本人指摘「QとAの文字サイズは一緒にして」を受けて、以前ここにあった
+   font-size: 0.85vwの縮小指定は撤去し、質問と同じ1.1vwを継承させて
+   いる（文字サイズを合わせる代わりに、下のwidthを34vwまで広げて長文が
+   収まる余白を確保した）。横並び配置（回答はtop:36%固定）になった
+   ことで、幅を広げても吹き出し下端は進行ドットまで十分な距離を
+   保てることをPlaywrightで確認済み。 */
+.qa__bubble--answer.is-long {
+  width: 34vw;
+}
+
+.qa__bubble-text {
+  position: relative;
+  z-index: 2;
+  /* 本人指摘「吹き出しの中の文章の段落の折り返し位置が気になる」を
+     受けて、質問文（assets/js/qa.js側）に入れた\nをそのまま改行として
+     見せるためにpre-lineを指定。通常の空白の連続はnormalと同じく
+     詰められるので、既存の文章（\nを含まないもの）の見え方は変わらない。 */
+  white-space: pre-line;
+}
+
+/* Q／Aアイコン：以前はCSSで縁取り円＋文字を描いていたが、こちらも
+   本人から送付されたアイコン画像（円の縁取りとQ/Aの文字が絵として
+   描かれた透過PNG、200×200px＝正方形）に差し替えた。border／
+   border-radius／background-color／font-familyは画像側に含まれる
+   ため撤去し、HTML側に残っている"Q"/"A"の文字（aria-hidden="true"
+   な装飾用テキスト）は画像と二重に見えてしまわないようfont-size:0で
+   視覚的に隠している。 */
+.qa__label {
+  position: absolute;
+  z-index: 4;
+  display: grid;
+  width: 4.375vw;
+  aspect-ratio: 1;
+  place-items: center;
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
+  font-size: 0;
+  line-height: 1;
+}
+
+/* 本人指摘「QとAの余白も50pxくらい欲しい」を受けて、アイコンを
+   吹き出しの角からさらに外側（1440px基準で+50px≒+3.4722vw）へ
+   離した。
+   ※続けて本人指摘「iconと吹き出しの距離も統一させてください」を
+   受けて、Q側とA側でtopの値が微妙に違っていた（-5.5556vw／
+   -5.2083vw。差はわずかだが、元の吹き出し画像の縁取りの見え方に
+   合わせて個別調整していた名残）のを、同じ-5.3819vwに統一した。
+   right／leftはもともと同じ値（-7.2917vw）だったのでそのまま。
+   ※続けて本人指摘「吹き出しとアイコンを全体的に今の7割くらいの
+   大きさに」を受けて、アイコンの幅(.qa__label)・オフセットとも
+   0.7倍に縮小（top/right/left: -5.3819vw→-3.7673vw、
+   -7.2917vw→-5.1042vw）。吹き出し本体とアイコンが同じ比率で縮む
+   ので、両者の見た目のバランスは変わらない。 */
+.qa__label--q {
+  top: -2.5vw;
+  right: -5.1042vw;
+  background-image: url("../img/qa_icon_q.png");
+}
+
+.qa__label--a {
+  top: -2.5vw;
+  left: -5.1042vw;
+  background-image: url("../img/qa_icon_a.png");
+}
+
+/* ステッカー：カードごとに2枚1組（qa.jsがsrcを差し替える）、
+   質問・回答よりさらに遅れて、少し時差をつけながらポン、ポンと
+   弾んで現れる。2枚を少し重ねて斜めに散らし、コラージュ／
+   スクラップブック風に見せている。 */
+.qa__sticker {
+  position: absolute;
+  z-index: 4;
+  width: auto;
+  height: auto;
+  pointer-events: none;
+  user-select: none;
+  filter: drop-shadow(0 0.5556vw 0.8333vw rgba(0, 0, 0, .22));
+}
+
+/* 出現位置：right/top固定ではなく、top/right/bottom/leftすべてを
+   CSS変数化してqa.js側から問いが切り替わるたびにランダムに上書き
+   できるようにしている（詳細はqa.js側のPOSITION_PRESETSコメント参照）。
+   デフォルト値は元のレイアウト（右上寄り）と同じにして、
+   JS未適用時・JS無効時でも従来どおり表示される。 */
+.qa__sticker--a {
+  top: var(--qa-sticker-a-top, 10%);
+  right: var(--qa-sticker-a-right, 6%);
+  bottom: var(--qa-sticker-a-bottom, auto);
+  left: var(--qa-sticker-a-left, auto);
+  max-width: 18vw;
+  max-height: 27vh;
+  opacity: var(--qa-sticker-a-opacity, 0);
+  transform: rotate(var(--qa-sticker-a-rot, 6deg)) scale(var(--qa-sticker-a-scale, .35));
+  transform-origin: center bottom;
+  z-index: 5;
+}
+
+.qa__sticker--b {
+  top: var(--qa-sticker-b-top, 26%);
+  right: var(--qa-sticker-b-right, 19%);
+  bottom: var(--qa-sticker-b-bottom, auto);
+  left: var(--qa-sticker-b-left, auto);
+  max-width: 14.5vw;
+  max-height: 22vh;
+  opacity: var(--qa-sticker-b-opacity, 0);
+  transform: rotate(var(--qa-sticker-b-rot, -8deg)) scale(var(--qa-sticker-b-scale, .35));
+  transform-origin: center bottom;
+  z-index: 4;
+}
+
+/* 進行ドット：今どの問いを表示中かの目印。 */
+.qa__progress {
+  position: absolute;
+  bottom: 6vw;
+  left: 50%;
+  z-index: 3;
+  display: flex;
+  gap: 0.8333vw;
+  transform: translateX(-50%);
+}
+
+.qa__progress-dot {
+  width: 0.8333vw;
+  height: 0.8333vw;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, .5);
+  transition: background-color 0.25s ease-out, transform 0.25s ease-out;
+}
+
+.qa__progress-dot.is-active {
+  background: #fff;
+  transform: scale(1.3);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .qa__progress-dot { transition: none; }
+}
+
+@media (max-width: 768px) {
+  .qa__heading { top: 4vh; width: 86vw; }
+  .qa__heading-title { font-size: 15vw; }
+  .qa__heading-sub { font-size: 3.6vw; }
+  .qa__scene { width: 92vw; }
+  /* デスクトップと同じ理由（本人指摘：吹き出しが大きすぎる／見出しとの
+     余白確保／アイコンの余白を50pxぶん相当広げる）でモバイル側も縮小・
+     再調整。
+     ※続けて本人指摘「全体的に今の7割くらいの大きさに」を受けて、
+     デスクトップと同じく一律0.7倍に再縮小（58vw→40.6vw／67vw→46.9vw／
+     13vw→9.1vw／padding・font-sizeも0.7倍）。 */
+  /* PC版はQ・Aを左右に並べる配置に変えたが、スマホは画面が縦長で
+     横に並べる余地が無いため、本人指摘「スマホ版は縦に長いから縦に
+     並べようか」のとおり従来どおりの「縦に積む」配置を維持する。
+     デスクトップ側の基本ルールでleft/topを横並び用の値
+     （left:25%/72%、top:40%）に変更したため、ここで明示的に
+     中央揃え＋縦積みの値（left:50%、top:34%/66%）に戻している。 */
+  .qa__bubble--question { top: 34%; left: 50%; }
+  .qa__bubble--answer { top: 66%; left: 50%; }
+  .qa__bubble--question,
+  .qa__bubble--answer { width: 40.6vw; padding: 5.6vw 6.3vw 3.5vw; font-size: 2.94vw; }
+  /* デスクトップと同じ理由（本番の長文回答に合わせた拡大）。
+     ※本人指摘「QとAの文字サイズは一緒にして」を受けて、以前ここに
+     あったfont-size:2.15vwの縮小指定は撤去し、質問と同じ2.94vwを
+     継承させている（本人指示「Qの位置はあんまり崩したくない」で
+     質問側の位置・サイズは元々触っていない）。widthは82vwのまま
+     （aspect-ratioで決まる高さは変わらないので、top:66%のままでも
+     進行ドットとの重なりは発生しない＝文字サイズだけを揃えた形）。 */
+  .qa__bubble--answer.is-long { width: 82vw; }
+  .qa__label { width: 9.1vw; }
+  /* デスクトップと同じくQ/Aでtopを統一（本人指摘：「iconと吹き出しの
+     距離も統一させてください」）。オフセット自体も0.7倍に縮小済み。 */
+  .qa__label--q { top: -4.76vw; right: -5.6vw; }
+  .qa__label--a { top: -4.76vw; left: -5.6vw; }
+  /* モバイルもデスクトップと同じくCSS変数駆動：qa.js側は画面幅に
+     関わらず同じ変数を書き込むだけなので、ここでは「変数が未設定の
+     時のデフォルト位置」だけをモバイル用の値に差し替える。
+     max-width/max-heightは常に固定でランダム化の対象外。
+     ※本人指摘「ステッカーの位置も調整していいからX軸Y軸調整して」対応
+     の過程で、Q3のステッカーBが回答吹き出し（is-long、幅82vw固定）の
+     文字と重なっているのを実機確認で発見。縦積みレイアウトだと回答の
+     下に残るスペースが画面高さの1割程度しかなく、従来のmax-height
+     （a:22vh／b:17vh）がその余白より大きいのが原因だったため、
+     モバイル側だけステッカーを一回り縮小（a:22vh→13vh／b:17vh→11vh、
+     max-widthも比例して縮小）し、確実に吹き出しの外へ収まるようにした。 */
+  .qa__sticker--a { top: var(--qa-sticker-a-top, 6%); right: var(--qa-sticker-a-right, 2%); bottom: var(--qa-sticker-a-bottom, auto); left: var(--qa-sticker-a-left, auto); max-width: 20vw; max-height: 13vh; }
+  .qa__sticker--b { top: var(--qa-sticker-b-top, 20%); right: var(--qa-sticker-b-right, 22%); bottom: var(--qa-sticker-b-bottom, auto); left: var(--qa-sticker-b-left, auto); max-width: 16vw; max-height: 11vh; }
+  .qa__progress { bottom: 8vw; }
+  .qa__progress-dot { width: 2vw; height: 2vw; }
+}
+
+/* ==========================================================
+   PAGE 6: FROM ME（Wedding_from me / Figma node 820:9859）
+=========================================================== */
+.from-me { width: 100%; }
+
+.from-me__stage {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1440 / 900;
+  overflow: hidden;
+  background: #101010;
+  will-change: transform;
+}
+
+/* QA→FROM MEのプッシュ切り替えも同じ理由で「両者の.page__frameが
+   同じサイズ・同じ位置」である前提の上に成立している（詳細は
+   #page-message .page__frameのコメント参照）。QA側をMEMORY/MESSAGEと
+   揃えたので、FROM ME側も同じ「ビューポートに常にぴったり一致」
+   方式に揃えて、押し出しの連鎖全体（MEMORY→MESSAGE→QA→FROM ME）で
+   継ぎ目の対称性を保つ。 */
+#page-from-me .page__frame {
+  width: 100vw;
+  height: 100vh;
+  aspect-ratio: auto;
+}
+
+#page-from-me .from-me {
+  height: 100%;
+}
+
+#page-from-me .from-me__stage {
+  width: 100%;
+  height: 100%;
+  aspect-ratio: auto;
+}
+
+.from-me__video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  filter: saturate(.82) brightness(.76);
+}
+
+/* 文字の背景：以前はfrosted glassのビネット（.from-me__veil、白radial/
+   linear-gradient＋backdrop-filter）で画面全体を持ち上げていたが、
+   本人から送付された「FROM ME」の切り抜き文字グラフィック
+   （assets/img/from_me_text_bg.png。※本人がフォルダ構成を整理し、
+   from-me/サブフォルダを廃止して一つ上のimg/直下へ移動したため、
+   パスもそれに合わせて変更済み。薄いグレーの文字部分だけが
+   不透明で、それ以外は透過PNG）を本文の背後に敷く方式に差し替えた
+   （詳細はindex.html側のコメント(1c)参照）。
+   - 動画(.from-me__video)の上・本文カード(.from-me__card)の下、という
+     重なり順はDOM順そのまま（このセレクタに明示的なz-indexは持たせず、
+     後発の.from-me__cardが自然に上へ来る仕組みに乗せている）。
+   - サイズは本文カード（46vw）より一回り大きい程度の幅60vwを基準にし、
+     縦方向はvh側の上限（画面が縦長でも入りきるよう84vh相当）とのmin()
+     で頭打ちにしている。どちらで頭打ちになっても元画像の縦横比
+     (900:1060)をaspect-ratioで維持するので、絵が潰れたり伸びたりしない。
+   - background-size:containで画像自体の比率を保ったまま中央に配置。
+     画面全体を覆うビネットほど主張が強くならないよう、あくまで本文の
+     背後にさりげなく重なる「透かし」の大きさに留めている。 */
+.from-me__text-bg {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: min(60vw, 71.3vh);
+  aspect-ratio: 900 / 1060;
+  transform: translate(-50%, -50%);
+  background-image: url("../img/from_me_text_bg.png");
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+  opacity: .9;
+  pointer-events: none;
+}
+
+.from-me__card {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 46vw;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transform: translate(-50%, -50%);
+}
+
+/* 文字色：(1b)の白いfrosted glassビネットの上では濃いチャコール
+   (#2b2620)が読みやすかったが、(1c)でビネットを廃止し動画へ直接
+   乗せる形になったため、暗い動画の上でも読めるよう白系に戻した。
+   .from-me__text-bgの「FROM ME」の切り抜きグラフィックは元々
+   ごく薄い(15%程度)半透明の黒であり、それ自体は可読性を持ち上げる
+   ための塗りではなく、あくまで背後にうっすら浮かぶ透かし模様として
+   意図されたもの（本人から「今の塗りは無しで」と明示的に指示された
+   ため、frosted glassのような全面の明るい塗りは復活させていない）。
+   そのため本文自体の可読性はtext-shadowだけで確保している：
+   1) ごく近距離のシャドウでフチを締めて輪郭をはっきりさせる、
+   2) 少し広がったぼかしで、動画の明るい部分に重なっても沈まない
+      ようにする、という二重のtext-shadowで対応。 */
+.from-me__message {
+  width: max-content;
+  max-width: 100%;
+  margin: 0;
+  color: #fdfbf5;
+  font-size: 1.1111vw;
+  font-weight: 500;
+  line-height: 3;
+  letter-spacing: .06em;
+  text-shadow:
+    0 0.06vw 0.28vw rgba(0, 0, 0, .65),
+    0 0.35vw 1.1vw rgba(0, 0, 0, .45);
+}
+
+/* 1行ずつ（.from-me__line）の登場は assets/js/from-me.js の setReveal()
+   がスクロール位置の連続関数として毎フレーム直接style.opacity／
+   style.transformを書き換える。CSSのtransitionは使わない（クラスの
+   有無だけで切り替わるtransitionだと、実際のスクロール位置と登場の
+   タイミングがズレてしまうため。詳細はindex.html側・qa.js先頭コメント
+   と同じ理由）。white-space:nowrapで、1行内での意図しない二重折り返し
+   を防いでいる。 */
+.from-me__line {
+  display: block;
+  white-space: nowrap;
+  opacity: 0;
+  will-change: opacity, transform;
+}
+
+/* prefers-reduced-motion: reduce の場合は assets/js/from-me.jsの
+   setReveal()内でreduceMotion判定をして、毎フレームの計算をせず
+   最初から全行opacity:1・transformなしをinline styleで直接設定する
+   （qa.js・interactions.jsと同じ方針。inline styleはCSSより強いので
+   ここでのCSS側の上書きは不要）。 */
+
+@media (max-width: 768px) {
+  .from-me__card {
+    width: 88vw;
+  }
+
+  .from-me__message {
+    font-size: 2.6vw;
+    line-height: 2.35;
+  }
+
+  /* .from-me__cardが88vwまで広がるモバイルでは、60vw基準のままだと
+     文字背景が本文カードより小さくなってしまうため、カードに合わせて
+     一回り大きい100vwを基準にする（aspect-ratioは共通なので縦横比は
+     崩れない）。 */
+  .from-me__text-bg {
+    width: min(100vw, 78vh);
+  }
+}
+
+/* ==========================================================
+   PAGE 7: TO BE CONTINUED（見出しのみ）
+   本人指示：「TO BE CONTINUEDの文字だけの切り替わりセクションを
+   別で作りたい」。他ページと同じ「ビューポートに常にぴったり一致」
+   方式（#page-message/#page-qa/#page-from-meと同じ理由）。
+=========================================================== */
+/* .page__frame自体も.tbc-text同様、画面いっぱいの大きさを持つ透明な
+   当たり判定になってしまうため、こちらもpointer-events:noneにする
+   （#page-message/#page-qaと同じく、pageとpage__frameの両方を塞ぐ
+   必要がある。詳細は直後の.tbc-textのコメント参照）。 */
+#page-tbc-text.page,
+#page-tbc-text .page__frame {
+  pointer-events: none;
+}
+
+#page-tbc-text .page__frame {
+  width: 100vw;
+  height: 100vh;
+  aspect-ratio: auto;
+}
+
+.tbc-text {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  /* ※背景色はここではなく.tbc-text__panel（左右それぞれ）に持たせる。
+     ここ（親要素）に#111を敷いてしまうと、PT-12スプリットで子の
+     左右パネルが画面外へ退場した後もこの親の背景がそのまま残って
+     しまい、下のPAGE 8（画像シーン）が最後まで覆い隠されたままに
+     なる不具合になる（実機のPlaywright検証で発覚）。
+
+     本人指示「最後のページの右下あたりにトップへ戻るボタンを置きたい」
+     で追加した#tbcTopBtn（PAGE 8＝#page-tbc-sceneの内部）がクリック
+     できない不具合が判明：PAGE 7（このページ、#page-tbc-text）は
+     PT-12スプリットの都合でPAGE 8よりz-indexが高いため(style.css内
+     #page-tbc-text.page.is-activeのコメント参照)、左右パネルが完全に
+     割れて画面外へ退場したあとも、この.tbc-text自体（position:relative;
+     width/height:100%で画面いっぱいの大きさを持ったまま）がis-active
+     な限りその場に残り続け、見た目は透明でもpointer-events:autoの
+     ままクリックを奪ってしまっていた（実機のPlaywright検証で発覚。
+     以前#page-message/#page-qaで発覚したのと同種の「見えない層が
+     下の当たり判定を奪う」問題）。.tbc-text自体に操作可能な要素は
+     一切無いため、単純にpointer-events:noneにして下のPAGE 8へ
+     クリックを通す。 */
+  pointer-events: none;
+}
+
+/* PT-12「スプリット」：静止時は.tbc-text__panel--l／--rの2枚が
+   それぞれ左半分・右半分だけをclip-pathで見せていて、ぴったり
+   合わさって元の1枚の見た目に戻る。assets/js/pager.jsのsetTbcSplit()
+   が--tbc-split-ratio(0〜1)を更新し、それぞれ反対方向へtranslateXする
+   ことで左右に裂けて画面外へ退場していく（詳細はJS側コメント参照）。 */
+.tbc-text__panel {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #111;
+  transform: translateX(calc(var(--tbc-split-x, 0) * 1%));
+}
+
+.tbc-text__panel--l {
+  clip-path: inset(0 50% 0 0);
+}
+
+.tbc-text__panel--r {
+  clip-path: inset(0 0 0 50%);
+}
+
+/* 本人指示「文字だけセクションに『2人の旅は続く』を入れたい、
+   サブ見出し的な感じで」。縦に並べるため.tbc-text__panel
+   （flex・中央寄せ）の直下に列方向のグループ要素を挟んでいる。 */
+.tbc-text__group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.9vw;
+}
+
+.tbc-text__heading {
+  margin: 0;
+  color: #fff;
+  font-family: "Dela Gothic One", sans-serif;
+  font-size: 4.1667vw;
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: -.03em;
+  text-align: center;
+  text-shadow: 0.2083vw 0.2778vw 0 rgba(231, 166, 0, .24);
+}
+
+.tbc-text__subheading {
+  margin: 0;
+  color: rgba(255, 255, 255, .72);
+  font-family: "Noto Sans JP", sans-serif;
+  font-size: 1.1111vw; /* メイン見出しよりはっきり小さく、あくまで「サブ」の位置づけ */
+  font-weight: 500;
+  letter-spacing: .28em; /* 和文サブ見出しらしく文字間を広めに */
+  text-align: center;
+}
+
+@media (max-width: 768px) {
+  .tbc-text__heading {
+    font-size: 8vw;
+  }
+
+  .tbc-text__subheading {
+    font-size: 3.4vw;
+    letter-spacing: .22em;
+  }
+}
+
+/* ==========================================================
+   PAGE 8: TO BE CONTINUED（画像シーン、サイト最後のページ）
+   本人から送付されたtbc-02〜10.pngはすべて同一サイズ(6001×3751)の
+   キャンバスで、各レイヤーの中でキャラクター/背景が最初から正しい
+   位置に配置済み。全レイヤーに同じ「箱いっぱいに敷く」スタイルだけを
+   与えて重ねれば、レイヤーごとの位置調整をCSS側で一切せずに元の
+   合成図（tbc-01.png参照・実データとしては使わない）を再現できる。
+=========================================================== */
+#page-tbc-scene .page__frame {
+  width: 100vw;
+  height: 100vh;
+  aspect-ratio: auto;
+}
+
+.tbc-scene {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  /* 元は単色#05070fの平面だったが、本人指示「背景をこのサイトで
+     作ったような宇宙空間にしてみたい」（＝新しく接続された
+     「1作品目」ポートフォリオページと同系統の、奥行きのある
+     宇宙空間の見た目）を受けて、うっすら青みがかった放射状
+     グラデーションに変更。下の.tbc-scene__stars/__nebulaと
+     重ねることで「1作品目」に近い雰囲気を出している。 */
+  background: radial-gradient(120% 90% at 78% 12%, #0d1c3a 0%, #05070f 55%, #010207 100%);
+}
+
+.tbc-scene__layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* 背景の宇宙空間演出（本人指示：「背景をこのサイトで作ったような
+   宇宙空間にしてみたい」＝「1作品目」ポートフォリオページの
+   Canvas星空＋流れ星＋ぼやけた星雲ブロブを参照元として移植）。
+   以前の静止画背景（assets/img/tbc-10.jpg・.tbc-scene__layer--bg）
+   はこれに差し替えたためHTMLからは外したが、ファイル自体は
+   このサイトの規約に従い削除せず残してある（将来また静止画に
+   戻す場合はimgタグを復元すればよい）。
+   描画ロジック本体はassets/js/tbc-space-bg.js参照。 */
+.tbc-scene__stars {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+  display: block;
+}
+
+/* ※星雲ブロブ（.tbc-scene__nebula、左上のぼやけた光の球）は本人指摘
+   「左上のボールが薄く見えるんだけど、それはいらないかな」を受けて
+   撤去した。HTML側の<div class="tbc-scene__nebula">も削除済み。
+   星空Canvas（.tbc-scene__stars）と背景グラデーションのみ残している。 */
+
+/* ロケット（tbc-02.png、乗っている2人ごと1枚の画像に含まれている）の
+   動き。当初は本人指示で「transform 1pxくらいの微振動」
+   （@keyframes tbc-rocket-shake、0.42秒周期のstepsアニメーションで
+   細かくジグザグに震わせるエンジン推進っぽい演出）にしていたが、
+   のちに本人指示「ロケットは微振動じゃなくて、ゆったり旅してる感じで
+   動かしたい」を受けて全面的に差し替えた。
+   上下方向のゆったりとした漂い（translateY、±10px）に、進行方向の
+   微妙な傾き変化（rotate）とわずかな左右の揺れ（translateX）を
+   組み合わせ、無重力の中を巡航するイメージ。ease-in-outの
+   infinite alternateで、往復の折り返しが不自然なスピード変化に
+   ならないようにしている（.tbc-scene__layer--floatと同じ考え方）。
+   ※初回は周期6.5秒にしていたが、本人指摘「ロケットの動きゆっくり
+   すぎるからもう少し動いてるのがわかるくらいの速度に調整して」を
+   受けて周期を3.2秒に短縮し、あわせて振れ幅（rotate/translateX）も
+   気持ち大きくして、動きが目で分かりやすいようにした。
+
+   ※本人がtbc-02.png（ロケット本体の画像）を新しい絵に差し替えた
+   （本人指示：「ロケットの画像変えといたからサイズ調整とかして
+   欲しい」）。新旧の画像は透過キャンバスの縦横比自体は同じ
+   （約1.6:1）だが、キャンバス内でロケット本体が占める割合が
+   大きく変わっていた（実測：旧は幅26.9%×高さ59.3%、新は幅
+   45.5%×高さ80.7%）。`.tbc-scene__layer`はキャンバスをそのまま
+   画面いっぱいに表示する仕組みのため、無調整だと新しいロケットが
+   以前よりかなり大きく表示されてしまう。面積比から逆算した
+   縮小率（≒0.66倍）をscale()として追加し、見た目のサイズを
+   旧画像に近づけた。scaleの基準点（transform-origin）はロケット
+   本体がキャンバス下端付近・横方向はやや左寄り（実測の中心位置）
+   にあるため37% 100%に設定し、縮小してもロケットの噴射炎の
+   位置が下にずれて浮いて見えないようにしている。 */
+.tbc-scene__layer--rocket {
+  transform-origin: 37% 100%;
+  animation: tbc-rocket-drift 3.2s ease-in-out infinite alternate;
+}
+
+@keyframes tbc-rocket-drift {
+  from { transform: translate(0, 0) rotate(-1.6deg) scale(0.66); }
+  to   { transform: translate(-6px, -10px) rotate(1.6deg) scale(0.66); }
+}
+
+/* 月（本人添付の満月画像／assets/img/tbc-moon.webp）と、その表面を
+   歩いているエイリアン3体＋宇宙飛行士1体。
+   本人指示：「月は今かけてる画像しか送ってないからこの画像に変えて
+   その場で360°回るようにして。現状の月と同じ位置になるようには
+   み出して配置しないといけないね」「歩いてる宇宙人たちはその場で
+   360°ではなくて、月に沿って360°回るようにしたい。月の表面を
+   歩いてる感じ」。
+
+   【月本体】：以前は透過キャンバス全体(.tbc-scene__layer)の隅っこに
+   描かれた「欠けた月」を、キャラクター毎にtransform-originを実測して
+   その場回転させていたが、今回は本人からもらった「欠けていない満月」
+   画像に差し替えるので、そのぶんシンプルに作り直した。
+   月画像そのものが正円（--tbc-moon-size を width/height 両方に使う
+   ことで、どんなビューポート比率でも真円を保証）なので、
+   transform-origin: 50% 50%（デフォルト）のまま回すだけで正しく
+   その場で回転する（以前のような個別のtransform-origin実測は不要）。
+   「現状の月と同じ位置」を再現するため、旧・月（tbc-03.png）が
+   画面右下の角からはみ出して見えていたのと同じ画角になるよう、
+   width/height/right/bottomをすべて画面幅基準のvw単位で指定して
+   位置・サイズを揃えている。この4つの値は.tbc-scene__orbit
+   （下記）とまったく同じ箱を作る必要があるため、CSS変数
+   （--tbc-moon-size/--tbc-moon-right/--tbc-moon-bottom）として
+   .tbc-sceneに定義し、両方から参照することで値のズレを防いでいる。
+
+   【月の表面を歩く4体】：.tbc-scene__orbitは月とぴったり同じ位置・
+   サイズの透明なラッパー。その中の各キャラクターにCSS Motion Path
+   （offset-path）で「このラッパー自身の一辺を半径とする円
+   （＝月のふちにぴったり沿う円）」を割り当てることで、月という
+   球体の表面（に見える円周）を歩いているように見せている。
+   offset-rotate: auto 90deg は「進行方向（接線）に対して常に90°
+   分＝球の中心から外向きに足が向くように」自動で向きを変える指定
+   （エイリアン3体のスプライトはいずれも本人送付の元画像内で
+   直立して歩いているポーズだったため、追加の補正無しでこの計算が
+   そのまま自然に効く）。エイリアン3体は@keyframes tbc-orbitで
+   offset-distanceを0%→100%へ無限ループさせ、開始位置
+   （animation-delayをマイナス値にして位相をずらす）を分散させて
+   いる。宇宙飛行士（tbc-astro-2.png、旧tbc-05.png。本人からの
+   今回の指示には無かったが、月をまるごと作り直す都合上、
+   旧位置に取り残すと月から浮いて見えてしまうため一緒に移設した）
+   だけはアニメーションさせず、offset-distanceを固定値にして
+   1箇所に留めている。 */
+.tbc-scene {
+  /* ビューポート横幅基準のvw単位。この3つを変えれば月・軌道リング
+     （.tbc-scene__moonと.tbc-scene__orbit）の両方に同時に反映される。 */
+  --tbc-moon-size: 46vw;
+  --tbc-moon-right: -13vw;
+  --tbc-moon-bottom: -15vw;
+
+  /* 左下の地球（本人追加のtbc-11.png／tbc-12.png）。月と同じ考え方で
+     「画面の角から少しはみ出させる」ことで球体の一部が覗いているように
+     見せている。サイズ・はみ出し具合を試したい場合はこの3値を調整
+     すればよい（月側の--tbc-moon-*とは独立しているので、地球だけ
+     大きく/小さくしたり、もっと角に寄せたりできる）。 */
+  --tbc-earth-size: 30vw;
+  --tbc-earth-left: -6vw;
+  --tbc-earth-bottom: -9vw;
+}
+
+.tbc-scene__moon {
+  position: absolute;
+  right: var(--tbc-moon-right);
+  bottom: var(--tbc-moon-bottom);
+  width: var(--tbc-moon-size);
+  height: var(--tbc-moon-size);
+  z-index: 1;
+}
+
+/* 左下の地球。本人送付のtbc-11.png/tbc-12.pngはどちらも周囲に大きな
+   透過の余白があったため、Pillowで球体本体ギリギリまでトリミングした
+   assets/img/tbc-earth-11.png／tbc-earth-12.pngを使っている（元の
+   tbc-11.png/tbc-12.pngはファイルとして残してあるが、このページからは
+   参照していない）。月と違い正方形の箱に無理やり収めず、画像本来の
+   縦横比のまま`width`だけ指定している（tbc-11版はほぼ真円、tbc-12版は
+   横長の地平線構図なので、同じ箱に収めると片方が不自然に引き伸ばされて
+   しまうため）。
+   本人指示「地球はロケットの奥のレイヤーに置いて」を受けて、明示的な
+   z-indexは持たせずauto（＝月より低い0番台の重なりレベル）にしている。
+   HTML側で地球の<img>をロケットの<img>より前（DOM順で手前＝下の層）に
+   置いているため、この2つだけを比べるとDOM順どおり「地球→ロケット」の
+   重なりになり、ロケットが常に地球の手前に表示される。 */
+.tbc-scene__earth {
+  position: absolute;
+  left: var(--tbc-earth-left);
+  bottom: var(--tbc-earth-bottom);
+  width: var(--tbc-earth-size);
+  height: auto;
+  pointer-events: none;
+}
+
+/* 地球もその場で自転させる（本人指示：「地球もその場で回転させたい。
+   回転の向きは任せるよ」）。月（反時計回り・42秒/周）とは逆の時計回り
+   にして、2つの天体が互いに逆方向にゆっくり回ることで、それぞれが
+   別々に自転している独立した天体だと感じられるようにした。月より
+   一回り大きい周期にして、地球の方が心持ちゆったり回っているように
+   している（本人指示「地球の回転速度を一周3秒遅くして」を2回受けて
+   50秒→53秒→56秒/周と、そのたび3秒ずつ延長）。 */
+.tbc-scene__earth--spin {
+  animation: tbc-earth-spin 56s linear infinite;
+}
+
+@keyframes tbc-earth-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+.tbc-scene__moon--spin {
+  /* 本人指示「月も歩く人も反時計回りにして」を受けて、下の
+     @keyframes tbc-spin側を0deg→-360deg（＝反時計回り）に変更した。 */
+  animation: tbc-spin 42s linear infinite; /* 遠くの天体らしく、ゆったり大きく回す */
+}
+
+@keyframes tbc-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(-360deg); }
+}
+
+.tbc-scene__orbit {
+  position: absolute;
+  right: var(--tbc-moon-right);
+  bottom: var(--tbc-moon-bottom);
+  width: var(--tbc-moon-size);
+  height: var(--tbc-moon-size);
+  z-index: 2; /* 月の少し手前＝表面に立っているように見える */
+  pointer-events: none;
+}
+
+/* 本人指摘：「宇宙人たちが月に沿って回ってるのはよかったけど、回転に
+   沿って、本体の角度も変えていかないと変なので、月の中心に向かって
+   立つようにして」。
+   offset-rotate: auto は円軌道の接線方向（＝進行方向）に自動で
+   向きを合わせる指定だが、接線方向と「中心から見た半径方向」は円周上
+   のどの点でも必ず90°ずれる。以前は`auto 90deg`（進行方向からさらに
+   90°足す）にしていたが、これは実際には「頭が中心を向き、逆さ立ち
+   して見える」向きになってしまっていた（進行方向ちょうど90°分が
+   すでに半径方向と一致するため、そこにさらに90°足すと逆向きに
+   なる計算）。
+   さらに下のtbc-orbitのアニメーション自体を反時計回りへ変更した
+   （`reverse`を付与）ため、進行方向の基準もそれに合わせて反転する。
+   その反転分を打ち消して「頭が中心の外側＝正しく起立、足が中心
+   側」になるよう、実測・検証の上で angle を 180deg に設定している
+   （反時計回り再生時のこの角度は、時計回り再生時の0degに相当）。
+
+   ※本人が引き続き気になっている「歩いている人たちの角度」を
+   調整したい場合は、この`offset-rotate`の値がその調整箇所。
+   `auto`のままだと円周上のどの位置でも「中心から見た半径方向に
+   正確に起立」する（物理的には正しいが、円の真横あたりでは
+   ほぼ真横に倒れて見える）。角度の付き方が気に入らない場合、
+   例えば`auto 20deg`のように角度を足し引きすると全体が一律に
+   傾く方向を変えられる。逆に常に一定の角度で固定したい（円周に
+   沿って回転させたくない）場合は、`auto`を外して固定の角度
+   （例：`0deg`）だけを指定すればよい。 */
+.tbc-scene__orbit-item {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: auto;
+  /* 月のふちギリギリを歩く円。本人指示「もう少し月の淵沿いに歩かせたい」
+     （48%→49.5%）に続き、「奥行きいらないから並んでる全員を月の淵
+     ギリギリに歩かせて」を受けて49.5%→49.8%へさらに拡大。この52%は
+     本人がFinder側で直接コードを編集して自分で設定した値（指示
+     「外周ラインもこっちで変えたから」）なので、以降はこれを基準
+     として扱う。幅は個体ごとに下記で上書きする。 */
+  offset-path: circle(52% at 50% 50%);
+  offset-anchor: 50% 50%; /* 画像自身の中心を軌道円にぴったり乗せる基準点にする */
+  offset-rotate: auto;
+}
+
+/* ※一時、円の真横あたりで体が傾きすぎる問題への対策として、この
+   区間（62%〜84%）だけを ease-in-out・infinite alternate で
+   行ったり来たりさせる@keyframes tbc-orbit-pace（往復方式）を
+   試したが、本人指摘「行進してる人たちがたまに後ろに下がる動きを
+   するけどそれは指示した覚えないから消して。月を4人縦に並んで
+   回る続けるだけだよ」を受けて撤回した。alternateによる折り返し＝
+   「後ろに下がる」動きに見えていたのが原因。
+   下の@keyframes tbc-orbitで、往復させずに0%→100%を同じ向きへ
+   回り続けるだけのシンプルな1方向ループに戻している。 */
+@keyframes tbc-orbit {
+  from { offset-distance: 0%; }
+  to   { offset-distance: 100%; }
+}
+
+/* 月の表面を歩く4体（エイリアン3体＋宇宙飛行士1体）を、1つの隊列
+   として並んで歩かせる。
+   本人指摘：「行進って前に進むことっていう捉え方なのか知らないけど、
+   さっき指示した月に沿って進むっていうことを無視してるからちゃんと
+   月を歩かせて。宇宙人3人と宇宙飛行士1人を並んで歩かせるように。
+   順番は最初に固定で配置したように」。
+   （直前の実装では「並んで行進」を「画面を横切る直線移動」と解釈して
+   しまい、月の軌道から外れてしまっていた。ここでは月を周回する
+   CSS Motion Path方式に戻した上で、4体を「1つの隊列」として揃える。）
+   その後「往復させると後ろに下がって見える」という指摘を受けて撤回、
+   現在は上の@keyframes tbc-orbit（0%→100%、同じ向きに回り続ける
+   だけの1方向ループ）に戻している。
+   4体とも同じoffset-path／同じ@keyframes tbc-orbit／同じ
+   animation-duration（20s）・同じ向き（reverse＝反時計回り）で
+   再生し、animation-delayだけを少しずつずらすことで、常に一定の
+   間隔を保ったまま隊列として固まって月を回り続けるようにしている。
+   並び順（＝どのanimation-delayを割り当てるか）は「最初に固定で
+   配置したように」＝本人から届いた素材のファイル番号順
+   （tbc-04→05→06→07＝エイリアン1→宇宙飛行士→エイリアン2→
+   エイリアン3）に合わせている。
+
+   本人指摘（さらに追加、その1）：「隊列の間隔を空けたい。人2人分くらい
+   空けたいな。あと、隊列の奥行きはなくてもいいので、同じ列に
+   後ろに並んで歩いてるイメージで」。
+   → この時点で「奥行き」を「4体のサイズ差」のことだと解釈し、
+   4体とも幅8%に統一してしまったが、これは誤解釈だった。
+
+   本人指摘（さらに追加、その2）：「4体のサイズを揃えて統一した件、
+   反映されてない気がする。サイズは最初の位置固定の時を基準に戻して。
+   あと奥行きいらないから並んでる全員を月の淵ギリギリに歩かせて」。
+   → 「奥行き」は本来「軌道の半径（月の中心からの距離）がバラバラで
+   遠近に見える」ことを指していて、サイズ差の話ではなかった。サイズは
+   むしろ本人から届いた元のキャラクター絵（各キャラの体格差）を
+   尊重すべきだった。対応として：
+   - サイズ：まだ全員が1枚の巨大な透過キャンバスに個別配置されて
+     いた「最初の位置固定」時代の元画像（tbc-04〜07.png、いずれも
+     同一サイズ3000×1876の透過キャンバス）から、Pillow＋numpyで
+     各キャラクターの不透明ピクセルの外接箱（bounding box）を実測。
+     キャンバス全体（＝画面いっぱい100vw相当）に対する幅の割合は
+     エイリアン1（tbc-04）6.40%、宇宙飛行士（tbc-05）6.50%、
+     エイリアン2（tbc-06）4.67%、エイリアン3（tbc-07）3.00%。
+     これを軌道ラッパーの基準（46vw）に対する割合へ換算し
+     （例：6.40vw ÷ 46vw）、13.9%／14.1%／10.2%／6.5%を新しい
+     `width`として採用した。エイリアン3が他よりだいぶ小さいのは
+     縮尺の間違いではなく、元絵でもとから小柄なキャラクターだった
+     ため。
+   - 奥行き（＝軌道半径）：全4体とも上の`.tbc-scene__orbit-item`で
+     同じ`offset-path: circle(49.8% at 50% 50%)`を共有しているので、
+     元々半径は揃っていた。49.5%→49.8%へさらに月のふちへ寄せている
+     （「淵ギリギリ」の指示を受けて）。
+   - 間隔：サイズを大きく戻したことで、以前の1.0s刻み（8%幅基準で
+     算出）のままだと隙間が本体幅とほぼ同じ＝2人分よりだいぶ狭く
+     なってしまう。新しい平均幅（約11.2%≒5.14vw）と下記の速度
+     （18秒/周）から改めて逆算し、1.3s刻み（-3.9s／-2.6s／-1.3s／0s）
+     に調整。これでオフセット差はおよそ7%＝約10.3vw（本体幅およそ
+     2体分）を維持している。
+   - 速度：本人指示「歩くスピードを一周の速度を2秒くらい早めたい」を
+     受けて、animation-durationを20s→18sに短縮。 */
+/* 本人指示「先頭の宇宙人とその後ろの宇宙飛行士の角度を時計回りに5°
+   回したい」→「10°」→さらに「15°回したい」を受けて、隊列の先頭2体
+   （エイリアン1・宇宙飛行士）だけ基準の角度を`auto 15deg`にしている
+   （5°→10°→15°、足し算ではなく最終的な角度として置き換え）。
+   `auto`の後ろの角度は時計回りが正の値なので、+15degで時計回りに
+   15°分傾く。逆に反時計回りへ回したい場合はマイナスの値（例：
+   `auto -15deg`）にすればよい。
+
+   さらに本人指示「行進してる人達に動きを追加したい。aからbで角度が
+   変わる指定をする。a=-5° b=10° を追加して行進してる感を出す」を
+   受けて、4体全員に「基準角度±この範囲で常に揺れ続ける」動きを
+   追加した（@keyframes tbc-orbit-walk／tbc-orbit-walk-lead、
+   ease-in-out・infinite・alternateで往復＝脚を踏み出す→戻すの
+   繰り返しに見えるようにしている。位置を往復させる時と違い、角度の
+   ゆらぎなので「後ろに下がって見える」問題は起きない）。
+   エイリアン2・3は基準角度が0°なので指示通りそのまま-5°〜10°の
+   範囲（tbc-orbit-walk）。エイリアン1・宇宙飛行士は基準角度が15°
+   なので、そこに-5°〜10°を足した10°〜25°の範囲（tbc-orbit-walk-
+   lead）で揺らし、「基準の15°を保ったまま歩いてゆれている」ように
+   している。揺れの周期（0.6秒）は全員共通であえて統一しつつ、
+   animation-delayを少しずつずらして脚の踏み出しタイミングを微妙に
+   バラけさせ、4体が完全に同じ動きで揃いすぎて不自然に見えないように
+   した（周回そのもののanimation-delay＝隊列の間隔とは別物）。 */
+/* 本人指摘「先頭の宇宙人だけ月から浮いてるからこれだけに月の表面側に
+   近づく指示をしたい」を受けて、先頭のエイリアン1だけ`offset-path`の
+   半径を上書きしている。共通ルール（`.tbc-scene__orbit-item`）の
+   52%（本人が自分で設定した外周ライン）はそのまま基準にしつつ、
+   このエイリアン1だけ49%（52%より3ポイント内側＝月の中心寄り）に
+   縮めて、月の表面によりめり込んで見えるようにした。他の3体
+   （宇宙飛行士・エイリアン2・3）は52%のまま変更していない。 */
+.tbc-scene__orbit-alien-1 {
+  width: 13.9%;
+  offset-distance: 62%;
+  offset-path: circle(50% at 50% 50%);
+  animation: tbc-orbit 18s linear infinite reverse,
+             tbc-orbit-walk-lead 0.6s ease-in-out infinite alternate;
+  animation-delay: -3.9s, 0s;
+}
+
+.tbc-scene__orbit-astro {
+  width: 14.1%;
+  offset-distance: 62%;
+  animation: tbc-orbit 18s linear infinite reverse,
+             tbc-orbit-walk-lead 0.6s ease-in-out infinite alternate;
+  animation-delay: -2.6s, -0.15s;
+}
+
+.tbc-scene__orbit-alien-2 {
+  width: 10.2%;
+  offset-distance: 62%;
+  animation: tbc-orbit 18s linear infinite reverse,
+             tbc-orbit-walk 0.6s ease-in-out infinite alternate;
+  animation-delay: -1.3s, -0.3s;
+}
+
+.tbc-scene__orbit-alien-3 {
+  width: 6.5%;
+  offset-distance: 62%;
+  animation: tbc-orbit 18s linear infinite reverse,
+             tbc-orbit-walk 0.6s ease-in-out infinite alternate;
+  animation-delay: 0s, -0.45s;
+}
+
+@keyframes tbc-orbit-walk {
+  from { offset-rotate: auto -5deg; }
+  to   { offset-rotate: auto 15deg; }
+}
+
+/* 本人指摘「先頭の2人の初期位置が前に傾いてるからそれを治したい。
+   初期位置もう10°時計回りに回して」を受けて、このアニメーションの
+   基準（from/to）を両方まとめて+10°（10°→20°、25°→35°）シフト
+   した。揺れ幅（from-to間の15°）自体は変えず、揺れの中心・初期姿勢
+   だけを時計回りに10°分ずらしている。 */
+@keyframes tbc-orbit-walk-lead {
+  from { offset-rotate: auto 20deg; }
+  to   { offset-rotate: auto 35deg; }
+}
+
+/* 右上の宇宙飛行士（風船を持って浮いているtbc-08.png）。本人指示：
+   「右上の宇宙飛行士はぷかぷか浮いてる感じにしたい」。無重力で
+   ゆっくり上下に漂う様子を、translateYの往復運動＋ごくわずかな
+   回転のゆらぎで表現（ease-in-out・alternateで折り返しが
+   不自然にならないようにしている）。 */
+.tbc-scene__layer--float {
+  animation: tbc-float 4.5s ease-in-out infinite alternate;
+}
+
+@keyframes tbc-float {
+  from { transform: translateY(0) rotate(0deg); }
+  to   { transform: translateY(-14px) rotate(2deg); }
+}
+
+/* 左上の自転車に乗ったエイリアン（tbc-09.png）。本人指示：「左上にいる
+   自転車に乗ってる宇宙人を風船の宇宙飛行士と同じく浮かばせたい」。
+   同じ@keyframes tbc-floatを再利用しつつ、右上の風船宇宙飛行士と
+   完全に同じタイミングで上下してしまうと不自然に揃って見えるため、
+   周期を少し変え（4.5s→5.2s）animation-delayでマイナスにずらして
+   位相をずらしている。 */
+.tbc-scene__layer--float-alt {
+  animation: tbc-float 5.2s ease-in-out infinite alternate;
+  animation-delay: -1.7s;
+}
+
+/* ==========================================================
+   最後のページを漂う4つのモチーフ（カラーの花束・ギフトボックス・
+   封蝋つきの封筒・乾杯するシャンパングラス）。
+
+   本人指示：「最後のページにこの四つのモチーフを回転させながら空間を
+   移動させたい。レイヤーとしては各アイテムの奥行きを作るために表示
+   サイズを変えたりして多層構造でお願いします」。
+
+   【構造】各モチーフは「外側の.tbc-scene__motif（位置＋空間を漂う
+   移動＝translateのみを担当）」と「内側の.tbc-scene__motif-img
+   （その場でのくるくる回転＝rotateのみを担当）」の二重構造にしている。
+   ロケット（tbc-rocket-drift）のようにtranslate+rotateを1つの
+   @keyframesにまとめる方法だと、複数のアニメーションが同じ
+   transformプロパティを取り合って干渉してしまうため使えない
+   （ここでは「移動しながら回転」を同時に、かつ互いに無関係な周期で
+   走らせたいため）。translateとrotateを別々の要素・別々の
+   アニメーションに分けることで、Web Animations的には全く独立に
+   スタック（合成）でき、移動の周期と回転の周期をそれぞれ自由に
+   ずらせる。
+
+   【奥行き（多層構造）】各アイテムの幅（vw、＝表示サイズ）とz-index
+   を意図的に変え、手前のアイテムほど大きく・奥のアイテムほど小さく
+   することで層の違いを表現している：
+     - シャンパングラス：最も手前（z-index 4・最大 10vw）
+     - 花束：やや手前（z-index 3・9vw）
+     - ギフトボックス：中間（z-index 2・7.5vw）
+     - 封筒：最も奥（z-index 1・最小 5.5vw）
+   位置はいずれも絶対配置（position:absolute）＋明示的なz-indexなので、
+   HTML側のDOM順は重なり順に影響しない（ロケット/地球のような
+   「z-index autoでDOM順に頼る」方式とは異なる）。
+
+   【配置場所】既存の演出（左上を漂う自転車エイリアン／右上を漂う
+   風船宇宙飛行士／中央のロケット／右下の月と表面を歩く4体／左下の
+   地球）とスクリーンショットで重ならないことを確認した上で、空いて
+   いる4箇所（上部中央／左中段／右中段／下部中央）を各アイテムが
+   画面を横切る際の「一番見えてほしい中間地点」として割り当てている。
+
+   【移動：画面外に出て一周してくる】本人フィードバック「漂うんじゃ
+   なくて画面外にいって一周してくる動きにしてほしい。本体が回転する
+   のは継続。いろんな方向に散らばってくれるといい」を受けて、
+   その場で小さく往復する「漂い」から作り直した。各アイテムのtranslate
+   キーフレームは、0%＝画面外（進行方向の後ろ側）→50%＝上記の中間
+   地点（画面内・最も見える瞬間）→100%＝画面外（進行方向の前側）と
+   一直線に移動する。0%と100%はどちらも画面の外なので、
+   animation:infiniteでループする瞬間（100%→0%の切り替わり）は
+   ユーザーからは見えない位置で起きており、「画面外に消えて、しばらく
+   すると反対側から現れてまた同じ経路を一周する」動きに見える
+   （固定文言の帯を2つ並べて無限にスクロールさせる.fv__marquee
+   （FVセクション）と同じ「両端を画面外に逃がしてループを隠す」考え方の
+   応用）。
+   ※本人報告「画面外から出てくる時に不自然な動き（消える時は自然）」
+   への対応：初期実装の移動量（横58〜65vw／縦60〜62vh）は、正方形に
+   近いビューポートでは十分だったが、実際のブラウザウィンドウの縦横比
+   次第では「画面外」のつもりの位置がまだ画面内に収まってしまい、
+   ループの継ぎ目（100%→0%の瞬間移動）が本当に見えてしまうケースが
+   あった。見える側の継ぎ目は当然不連続なジャンプになるため
+   「不自然」に見え、一方で消える方向（0%→50%→100%の連続的な移動）は
+   継ぎ目を通らないのでどんな画面比でも常に自然に見える——という
+   ちょうど本人の報告と一致する症状だったため、移動量を横130vw／縦
+   130vhまで大きく引き上げ、どんなウィンドウ比率でも往復の両端が
+   確実に画面外に出るよう安全マージンを確保した。
+   4アイテムはそれぞれ別方向（右→左／下→上／左→右／上→下）に移動する
+   ことで「いろんな方向に散らばる」ようにしている。移動はease-in-out
+   ではなく等速のlinear（一定速度で空間を横切る、宇宙空間を漂う
+   デブリのような動き）。
+   回転（内側.tbc-scene__motif-imgのtbc-motif-spin-cw/-ccw）は従来どおり
+   継続。移動と回転は別要素・別アニメーションなので、周期がずれていても
+   互いに影響しない。
+
+   ※本人フィードバック「tbc-13〜16の動きだけど、直線的でつまらないから、
+   宇宙に漂ってる感じを出したい」を受けて再調整。「画面外に出て一周
+   してくる」という往復構造自体は維持したいという直前のフィードバックと
+   矛盾しないよう、経路の骨格（0%＝画面外→50%＝中間地点→100%＝反対側の
+   画面外）は変えずに、以下の2点だけを変更した：
+     1) animation-timing-function を linear（等速）から ease-in-out に
+        変更。等速で横切るとベルトコンベアのように機械的に見えるため、
+        画面外付近ではゆっくり・画面内を通過する中間あたりでは少し速く、
+        という緩急を付けることで「勢いよく飛んでいるのではなく、漂って
+        いる」印象に近づけた（サイト内の他の浮遊演出
+        .tbc-float／ロケットのtbc-rocket-driftも同じease-in-out思想）。
+        回転（.tbc-scene__motif-img側）は従来どおりlinear
+        （等速回転＝無重力での一定回転運動）のまま変更していない。
+     2) 各keyframesに中間の経由点を追加し、進行方向に対して垂直な向きへ
+        小さく揺れながら進む緩やかなS字カーブに変更（以前は0%→50%→100%
+        の3点だけを結ぶ完全な直線移動だった）。一直線の等速移動が
+        「直線的でつまらない」という指摘の核心だったため、経路自体を
+        まっすぐな線から緩いうねりのある曲線に変え、重力のない空間を
+        漂うデブリのような不規則さを出している。 */
+/* ※さらにその後、本人指示「加速減速は無くして。tbc-22,23は回転させず
+   直進（22は左下→右上、23は右→左）。それ以外は重なってよいのでランダムに
+   散るように。直進するのもあれば、円弧に沿って動くものも」を受けて、
+   移動（外側.tbc-scene__motif）はassets/js/tbc-motifs.jsがWeb Animations
+   APIで担当するように変更した（1回通り過ぎるたびにランダムな直線／円弧の
+   経路を決め直し、easing:linear＋経路の長さ÷一定の速さで動かす）。
+   JSがinline styleでanimation-name:none・left/top:0を上書きするので、
+   以下の各モチーフのleft/top指定と@keyframes tbc-motif-drift-*は、
+   JSが動かない環境（Web Animations API非対応）向けの予備として残っている
+   だけで、通常は使われない。内側の回転（tbc-motif-spin-*）はそのまま
+   使っている（tbc-22デロリアン・tbc-23 ONE OK ROCKだけJSで回転を止める）。 */
+.tbc-scene__motif {
+  position: absolute;
+  width: var(--motif-w, 8vw);
+  z-index: var(--motif-z, 2);
+  pointer-events: none;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+}
+
+.tbc-scene__motif-img {
+  display: block;
+  width: 100%;
+  height: auto;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+
+/* 花束（カラー）：画面上部中央を右から左へ横切る。 */
+.tbc-scene__motif--bouquet {
+  left: 44vw;
+  top: 6vh;
+  --motif-w: 9vw;
+  --motif-z: 3;
+  animation-name: tbc-motif-drift-bouquet;
+  animation-duration: 26s;
+  animation-delay: -6s;
+}
+.tbc-scene__motif--bouquet .tbc-scene__motif-img {
+  animation-name: tbc-motif-spin-cw;
+  animation-duration: 24s;
+}
+@keyframes tbc-motif-drift-bouquet {
+  0%   { transform: translate(130vw, -8vh); }
+  15%  { transform: translate(88vw, 6vh); }
+  35%  { transform: translate(35vw, -9vh); }
+  50%  { transform: translate(0, 4vh); }
+  65%  { transform: translate(-35vw, -6vh); }
+  85%  { transform: translate(-88vw, 9vh); }
+  100% { transform: translate(-130vw, -4vh); }
+}
+
+/* ギフトボックス：画面左中段を下から上へ横切る。 */
+.tbc-scene__motif--gift {
+  left: 6vw;
+  top: 40vh;
+  --motif-w: 7.5vw;
+  --motif-z: 2;
+  animation-name: tbc-motif-drift-gift;
+  animation-duration: 32s;
+  animation-delay: -14s;
+}
+.tbc-scene__motif--gift .tbc-scene__motif-img {
+  animation-name: tbc-motif-spin-ccw;
+  animation-duration: 32s;
+}
+@keyframes tbc-motif-drift-gift {
+  0%   { transform: translate(6vw, 130vh); }
+  15%  { transform: translate(-4vw, 88vh); }
+  35%  { transform: translate(5vw, 35vh); }
+  50%  { transform: translate(-3vw, 0); }
+  65%  { transform: translate(4vw, -35vh); }
+  85%  { transform: translate(-5vw, -88vh); }
+  100% { transform: translate(3vw, -130vh); }
+}
+
+/* 封筒（封蝋つき）：画面右中段を左から右へ横切る、4体の中で最も
+   小さい＝最も奥の層。 */
+.tbc-scene__motif--envelope {
+  left: 62vw;
+  top: 28vh;
+  --motif-w: 5.5vw;
+  --motif-z: 1;
+  animation-name: tbc-motif-drift-envelope;
+  animation-duration: 20s;
+  animation-delay: -3s;
+}
+.tbc-scene__motif--envelope .tbc-scene__motif-img {
+  animation-name: tbc-motif-spin-cw;
+  animation-duration: 19s;
+}
+@keyframes tbc-motif-drift-envelope {
+  0%   { transform: translate(-130vw, 10vh); }
+  15%  { transform: translate(-88vw, -7vh); }
+  35%  { transform: translate(-35vw, 8vh); }
+  50%  { transform: translate(0, -4vh); }
+  65%  { transform: translate(35vw, 7vh); }
+  85%  { transform: translate(88vw, -8vh); }
+  100% { transform: translate(130vw, -10vh); }
+}
+
+/* シャンパングラス：画面下部中央を上から下へ横切る、4体の中で
+   最も大きい＝最も手前の層。 */
+.tbc-scene__motif--champagne {
+  left: 50vw;
+  top: 74vh;
+  --motif-w: 10vw;
+  --motif-z: 4;
+  animation-name: tbc-motif-drift-champagne;
+  animation-duration: 29s;
+  animation-delay: -19s;
+}
+.tbc-scene__motif--champagne .tbc-scene__motif-img {
+  animation-name: tbc-motif-spin-ccw;
+  animation-duration: 28s;
+}
+@keyframes tbc-motif-drift-champagne {
+  0%   { transform: translate(-8vw, -130vh); }
+  15%  { transform: translate(6vw, -88vh); }
+  35%  { transform: translate(-5vw, -35vh); }
+  50%  { transform: translate(4vw, 0); }
+  65%  { transform: translate(-6vw, 35vh); }
+  85%  { transform: translate(5vw, 88vh); }
+  100% { transform: translate(8vw, 130vh); }
+}
+
+@keyframes tbc-motif-spin-cw {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+@keyframes tbc-motif-spin-ccw {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(-360deg); }
+}
+
+/* ==========================================================
+   3灯のペンダントライト（銅・赤・黒／tbc-lamp-copper.webp他）。
+   本人指示：「tbc-17〜19は上から垂らす感じ 希望は紐が見切れないくらいに
+   左右にゆっくり揺らしたい」。
+
+   元画像（Pillowでbbox+2%パディングトリミング済み）はいずれも、
+   天井に固定されるコードの付け根がほぼ画像の真上端に来るようになって
+   いる。そこでtransform-origin: 50% 0%（＝画像の上端中央＝コードの
+   付け根）を回転軸に固定し、その軸点まわりでrotate()だけを振り子の
+   ように往復させている。軸点そのものは画面上のtop位置に固定された
+   ままなので、どれだけ振れてもコードの付け根が画面上端の外へ
+   まっすぐ伸びているという見た目は崩れず、「紐が見切れる」ことがない。
+   （既存の4モチーフのような「外側div＝移動／内側img＝回転」という
+   二重構造は不要——ここでは移動させず、その場での振り子回転のみを
+   1つの要素で表現しているため。）
+   3灯とも振れ幅は小さめ（±4deg）・周期は6〜9秒でずらし、それぞれ
+   left位置・コードの長さ（＝画像の表示高さ）・周期をわずかに変えて
+   バラバラに見えるようにしている。 */
+.tbc-scene__lamp {
+  position: absolute;
+  top: -2vh;
+  z-index: 3;
+  pointer-events: none;
+  transform-origin: 50% 0%;
+  animation-name: tbc-lamp-sway;
+  animation-duration: var(--lamp-duration, 7s);
+  animation-delay: var(--lamp-delay, 0s);
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+  animation-direction: alternate;
+}
+.tbc-scene__lamp-img {
+  display: block;
+  height: var(--lamp-h, 32vh);
+  width: auto;
+}
+@keyframes tbc-lamp-sway {
+  from { transform: rotate(-4deg); }
+  to   { transform: rotate(4deg); }
+}
+
+.tbc-scene__lamp--copper {
+  left: 9vw;
+  --lamp-h: 30vh;
+  --lamp-duration: 7.4s;
+  --lamp-delay: -1.2s;
+}
+.tbc-scene__lamp--red {
+  left: 43vw;
+  --lamp-h: 34vh;
+  --lamp-duration: 8.6s;
+  --lamp-delay: -4s;
+}
+.tbc-scene__lamp--black {
+  left: 78vw;
+  --lamp-h: 26.3vh;
+  --lamp-duration: 6.6s;
+  --lamp-delay: -2.6s;
+}
+
+/* ==========================================================
+   最背面を漂う8つのモチーフ（スノーボード・ウイスキーボトル・
+   デロリアン・ONE OK ROCKロゴ・クロミ・モンチッチ・黒い豆型の
+   キャラクター・プテラノドン）。
+
+   本人指示：「tbc-20〜27も宇宙に漂う感じで。本体がその場で回転しつつ、
+   空間の中も動いてほしい。レイヤーは奥の方で」。
+
+   構造・移動の考え方は上の4モチーフ（花束等）とまったく同じ
+   （外側divが空間移動＝translateのみ、内側imgがその場回転＝rotateのみ、
+   画面外→中間地点→反対側の画面外という往復＋ease-in-outの緩急＋
+   S字カーブの経由点で「漂う」感じを出す）。異なるのは以下の2点のみ：
+     - 「レイヤーは奥の方で」の指示に対応するため、--motif-zを0に
+       固定（既存4モチーフは1〜4）。かつHTML側でもこの8点は
+       星空Canvasの直後＝ロケットや月より前に配置しているため、
+       スタッキング上は確実にそれらより奥に沈む（詳細はindex.html側の
+       コメント参照）。
+     - 8点それぞれ移動方向・経由点・周期をばらけさせ、画面のあちこちを
+       別々の軌道でゆっくり横切るようにしている。 */
+.tbc-scene__motif--snowboard {
+  left: 14vw;
+  top: 8vh;
+  --motif-w: 4.5vw;
+  --motif-z: 0;
+  animation-name: tbc-motif-drift-snowboard;
+  animation-duration: 34s;
+  animation-delay: -10s;
+}
+.tbc-scene__motif--snowboard .tbc-scene__motif-img {
+  animation-name: tbc-motif-spin-ccw;
+  animation-duration: 31s;
+}
+@keyframes tbc-motif-drift-snowboard {
+  0%   { transform: translate(-6vw, 130vh); }
+  15%  { transform: translate(4vw, 88vh); }
+  35%  { transform: translate(-5vw, 35vh); }
+  50%  { transform: translate(3vw, 0); }
+  65%  { transform: translate(-4vw, -35vh); }
+  85%  { transform: translate(5vw, -88vh); }
+  100% { transform: translate(-3vw, -130vh); }
+}
+
+.tbc-scene__motif--whisky {
+  left: 4vw;
+  top: 55vh;
+  --motif-w: 4vw;
+  --motif-z: 0;
+  animation-name: tbc-motif-drift-whisky;
+  animation-duration: 37s;
+  animation-delay: -5s;
+}
+.tbc-scene__motif--whisky .tbc-scene__motif-img {
+  animation-name: tbc-motif-spin-cw;
+  animation-duration: 33s;
+}
+@keyframes tbc-motif-drift-whisky {
+  0%   { transform: translate(-130vw, 8vh); }
+  15%  { transform: translate(-88vw, -6vh); }
+  35%  { transform: translate(-35vw, 7vh); }
+  50%  { transform: translate(0, -4vh); }
+  65%  { transform: translate(35vw, 6vh); }
+  85%  { transform: translate(88vw, -7vh); }
+  100% { transform: translate(130vw, 8vh); }
+}
+
+.tbc-scene__motif--delorean {
+  left: 28vw;
+  top: 14vh;
+  --motif-w: 8.5vw;
+  --motif-z: 0;
+  animation-name: tbc-motif-drift-delorean;
+  animation-duration: 40s;
+  animation-delay: -22s;
+}
+.tbc-scene__motif--delorean .tbc-scene__motif-img {
+  animation-name: tbc-motif-spin-ccw;
+  animation-duration: 42s;
+  /* 本人指示「tbc-deloreanの角度を反時計回りに30°回したい」。
+     tbc-motifs.js側でnoSpin指定（その場回転なし・直進のみ）のため
+     このimg要素のCSSアニメーションはJSでanimation-name:noneに
+     上書きされ、実際に効くのはここに書いた静的なtransformだけになる。
+     rotate()の負の値＝反時計回りなので-30degを指定。 */
+  transform: rotate(-30deg);
+}
+@keyframes tbc-motif-drift-delorean {
+  0%   { transform: translate(130vw, 20vh); }
+  15%  { transform: translate(88vw, -14vh); }
+  35%  { transform: translate(35vw, 16vh); }
+  50%  { transform: translate(0, -8vh); }
+  65%  { transform: translate(-35vw, 14vh); }
+  85%  { transform: translate(-88vw, -16vh); }
+  100% { transform: translate(-130vw, -20vh); }
+}
+
+.tbc-scene__motif--oneokrock {
+  left: 60vw;
+  top: 66vh;
+  --motif-w: 7.5vw;
+  --motif-z: 0;
+  animation-name: tbc-motif-drift-oneokrock;
+  animation-duration: 30s;
+  animation-delay: -13s;
+}
+.tbc-scene__motif--oneokrock .tbc-scene__motif-img {
+  animation-name: tbc-motif-spin-cw;
+  animation-duration: 27s;
+}
+@keyframes tbc-motif-drift-oneokrock {
+  0%   { transform: translate(-130vw, -6vh); }
+  15%  { transform: translate(-88vw, 8vh); }
+  35%  { transform: translate(-35vw, -7vh); }
+  50%  { transform: translate(0, 5vh); }
+  65%  { transform: translate(35vw, -8vh); }
+  85%  { transform: translate(88vw, 7vh); }
+  100% { transform: translate(130vw, 6vh); }
+}
+
+.tbc-scene__motif--kuromi {
+  left: 68vw;
+  top: 6vh;
+  --motif-w: 4.5vw;
+  --motif-z: 0;
+  animation-name: tbc-motif-drift-kuromi;
+  animation-duration: 26s;
+  animation-delay: -7s;
+}
+.tbc-scene__motif--kuromi .tbc-scene__motif-img {
+  animation-name: tbc-motif-spin-ccw;
+  animation-duration: 22s;
+}
+@keyframes tbc-motif-drift-kuromi {
+  0%   { transform: translate(20vw, -130vh); }
+  15%  { transform: translate(-14vw, -88vh); }
+  35%  { transform: translate(16vw, -35vh); }
+  50%  { transform: translate(-8vw, 0); }
+  65%  { transform: translate(14vw, 35vh); }
+  85%  { transform: translate(-16vw, 88vh); }
+  100% { transform: translate(-20vw, 130vh); }
+}
+
+.tbc-scene__motif--monchhichi {
+  left: 88vw;
+  top: 36vh;
+  --motif-w: 5.5vw;
+  --motif-z: 0;
+  animation-name: tbc-motif-drift-monchhichi;
+  animation-duration: 33s;
+  animation-delay: -17s;
+}
+.tbc-scene__motif--monchhichi .tbc-scene__motif-img {
+  animation-name: tbc-motif-spin-cw;
+  animation-duration: 30s;
+}
+@keyframes tbc-motif-drift-monchhichi {
+  0%   { transform: translate(6vw, -130vh); }
+  15%  { transform: translate(-5vw, -88vh); }
+  35%  { transform: translate(4vw, -35vh); }
+  50%  { transform: translate(-3vw, 0); }
+  65%  { transform: translate(5vw, 35vh); }
+  85%  { transform: translate(-4vw, 88vh); }
+  100% { transform: translate(-6vw, 130vh); }
+}
+
+.tbc-scene__motif--bean {
+  left: 38vw;
+  top: 72vh;
+  --motif-w: 3vw;
+  --motif-z: 0;
+  animation-name: tbc-motif-drift-bean;
+  animation-duration: 28s;
+  animation-delay: -9s;
+}
+.tbc-scene__motif--bean .tbc-scene__motif-img {
+  animation-name: tbc-motif-spin-ccw;
+  animation-duration: 24s;
+}
+@keyframes tbc-motif-drift-bean {
+  0%   { transform: translate(5vw, 130vh); }
+  15%  { transform: translate(-4vw, 88vh); }
+  35%  { transform: translate(3vw, 35vh); }
+  50%  { transform: translate(-3vw, 0); }
+  65%  { transform: translate(4vw, -35vh); }
+  85%  { transform: translate(-5vw, -88vh); }
+  100% { transform: translate(-6vw, -130vh); }
+}
+
+.tbc-scene__motif--pterodactyl {
+  left: 10vw;
+  top: 26vh;
+  --motif-w: 6.5vw;
+  --motif-z: 0;
+  animation-name: tbc-motif-drift-pterodactyl;
+  animation-duration: 24s;
+  animation-delay: -15s;
+}
+.tbc-scene__motif--pterodactyl .tbc-scene__motif-img {
+  animation-name: tbc-motif-spin-cw;
+  animation-duration: 20s;
+}
+@keyframes tbc-motif-drift-pterodactyl {
+  0%   { transform: translate(-130vw, -10vh); }
+  15%  { transform: translate(-88vw, 8vh); }
+  35%  { transform: translate(-35vw, -9vh); }
+  50%  { transform: translate(0, 6vh); }
+  65%  { transform: translate(35vw, -8vh); }
+  85%  { transform: translate(88vw, 9vh); }
+  100% { transform: translate(130vw, 10vh); }
+}
+
+/* ----------------------------------------------------------
+   追加のフィギュア4体（tbc-28〜31：道化師・茶髪の男の子・金髪の
+   女の子・帽子とメガネの男性）。「tbc-28から32まで追加しました。
+   同じように浮遊させてください」を受けて、直前の8点と全く同じ
+   仕組み（--motif-z:0の最背面グループ、外側divが空間移動・内側imgが
+   その場回転）で追加した。tbc-motifs.jsが.tbc-scene__motifを
+   自動的に拾って動かすため、JS側の変更は不要。 ---------------------- */
+.tbc-scene__motif--toy-clown {
+  left: 52vw;
+  top: 80vh;
+  --motif-w: 5vw;
+  --motif-z: 0;
+  animation-name: tbc-motif-drift-toy-clown;
+  animation-duration: 29s;
+  animation-delay: -18s;
+}
+.tbc-scene__motif--toy-clown .tbc-scene__motif-img {
+  animation-name: tbc-motif-spin-cw;
+  animation-duration: 26s;
+}
+@keyframes tbc-motif-drift-toy-clown {
+  0%   { transform: translate(8vw, 130vh); }
+  15%  { transform: translate(-6vw, 88vh); }
+  35%  { transform: translate(5vw, 35vh); }
+  50%  { transform: translate(-4vw, 0); }
+  65%  { transform: translate(6vw, -35vh); }
+  85%  { transform: translate(-5vw, -88vh); }
+  100% { transform: translate(-8vw, -130vh); }
+}
+
+.tbc-scene__motif--toy-boy {
+  left: 22vw;
+  top: 46vh;
+  --motif-w: 4.5vw;
+  --motif-z: 0;
+  animation-name: tbc-motif-drift-toy-boy;
+  animation-duration: 35s;
+  animation-delay: -21s;
+}
+.tbc-scene__motif--toy-boy .tbc-scene__motif-img {
+  animation-name: tbc-motif-spin-ccw;
+  animation-duration: 28s;
+}
+@keyframes tbc-motif-drift-toy-boy {
+  0%   { transform: translate(-130vw, 6vh); }
+  15%  { transform: translate(-88vw, -8vh); }
+  35%  { transform: translate(-35vw, 7vh); }
+  50%  { transform: translate(0, -5vh); }
+  65%  { transform: translate(35vw, 8vh); }
+  85%  { transform: translate(88vw, -7vh); }
+  100% { transform: translate(130vw, -6vh); }
+}
+
+.tbc-scene__motif--toy-girl {
+  left: 80vw;
+  top: 58vh;
+  --motif-w: 3.6vw;
+  --motif-z: 0;
+  animation-name: tbc-motif-drift-toy-girl;
+  animation-duration: 27s;
+  animation-delay: -11s;
+}
+.tbc-scene__motif--toy-girl .tbc-scene__motif-img {
+  animation-name: tbc-motif-spin-cw;
+  animation-duration: 23s;
+}
+@keyframes tbc-motif-drift-toy-girl {
+  0%   { transform: translate(6vw, -130vh); }
+  15%  { transform: translate(-5vw, -88vh); }
+  35%  { transform: translate(4vw, -35vh); }
+  50%  { transform: translate(-4vw, 0); }
+  65%  { transform: translate(5vw, 35vh); }
+  85%  { transform: translate(-6vw, 88vh); }
+  100% { transform: translate(-7vw, 130vh); }
+}
+
+.tbc-scene__motif--toy-man {
+  left: 48vw;
+  top: 18vh;
+  --motif-w: 3.8vw;
+  --motif-z: 0;
+  animation-name: tbc-motif-drift-toy-man;
+  animation-duration: 38s;
+  animation-delay: -6s;
+}
+.tbc-scene__motif--toy-man .tbc-scene__motif-img {
+  animation-name: tbc-motif-spin-ccw;
+  animation-duration: 34s;
+}
+@keyframes tbc-motif-drift-toy-man {
+  0%   { transform: translate(-8vw, 130vh); }
+  15%  { transform: translate(6vw, 88vh); }
+  35%  { transform: translate(-5vw, 35vh); }
+  50%  { transform: translate(4vw, 0); }
+  65%  { transform: translate(-6vw, -35vh); }
+  85%  { transform: translate(5vw, -88vh); }
+  100% { transform: translate(7vw, -130vh); }
+}
+
+/* ----------------------------------------------------------
+   ランタン（tbc-32）7個：ラプンツェルの灯篭祭りのように、画面の
+   下から上へゆっくり昇っていく専用演出。他のモチーフ
+   （.tbc-scene__motif、ランダムな直線／円弧軌道）とは別物なので、
+   あえて別クラスにして tbc-motifs.js の対象から外している。
+   3灯のペンダントライト（.tbc-scene__lamp）と同じ「共通の
+   @keyframes＋CSS変数で1個ずつ差をつける」方式。
+   本人指示「ロケットより奥のレイヤーにして」を受けて、z-indexを
+   2→0に変更（背景12モチーフと同じ層）。ロケット・月・地球はいずれも
+   z-index未指定（auto＝この0の層に混ざり、層の中ではDOM順で重なりが
+   決まる）なので、index.html側でもこの要素を背景12モチーフの直後・
+   ロケット/月/地球より前に配置し直すことで、確実にそれらより奥へ
+   沈めている（詳しくはindex.html側のコメント参照）。 ---------------------- */
+.tbc-scene__lantern-field {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+.tbc-scene__lantern {
+  position: absolute;
+  left: var(--lantern-left, 10%);
+  bottom: 0;
+  width: var(--lantern-w, 4vw);
+  opacity: var(--lantern-op, 0.92);
+  animation-name: var(--lantern-rise, tbc-lantern-rise-a);
+  animation-duration: var(--lantern-duration, 28s);
+  animation-delay: var(--lantern-delay, 0s);
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+.tbc-scene__lantern-img {
+  display: block;
+  width: 100%;
+  height: auto;
+  filter: drop-shadow(0 0 8px rgba(255, 178, 84, 0.6)) drop-shadow(0 0 20px rgba(255, 140, 60, 0.35));
+  animation: tbc-lantern-tilt var(--tilt-duration, 6s) ease-in-out infinite alternate;
+  animation-delay: var(--tilt-delay, 0s);
+}
+@keyframes tbc-lantern-tilt {
+  from { transform: rotate(-3deg); }
+  to   { transform: rotate(3deg); }
+}
+/* 上昇の軌道は3種類（a/b/c）だけ用意し、7個で使い回す（少し揺れながら
+   まっすぐ昇る、というS字カーブの向き・振れ幅だけを変えたバリエーション）。
+   0%は画面の下端よりさらに下、100%は画面の上端よりさらに上なので、
+   ループの継ぎ目（100%→0%）はどちらも画面外で起きて見えない。 */
+@keyframes tbc-lantern-rise-a {
+  0%   { transform: translate(0, 22vh); }
+  20%  { transform: translate(1.6vw, -6vh); }
+  40%  { transform: translate(-1.2vw, -32vh); }
+  60%  { transform: translate(1.8vw, -58vh); }
+  80%  { transform: translate(-1.4vw, -84vh); }
+  100% { transform: translate(1vw, -126vh); }
+}
+@keyframes tbc-lantern-rise-b {
+  0%   { transform: translate(0, 24vh); }
+  20%  { transform: translate(-1.8vw, -4vh); }
+  40%  { transform: translate(1.4vw, -30vh); }
+  60%  { transform: translate(-2vw, -56vh); }
+  80%  { transform: translate(1.6vw, -82vh); }
+  100% { transform: translate(-1.2vw, -128vh); }
+}
+@keyframes tbc-lantern-rise-c {
+  0%   { transform: translate(0, 20vh); }
+  20%  { transform: translate(1.2vw, -10vh); }
+  40%  { transform: translate(-1.8vw, -36vh); }
+  60%  { transform: translate(1.4vw, -60vh); }
+  80%  { transform: translate(-1vw, -86vh); }
+  100% { transform: translate(1.6vw, -124vh); }
+}
+
+.tbc-scene__lantern--1 { --lantern-left: 4%;  --lantern-w: 4.6vw; --lantern-op: 0.95; --lantern-rise: tbc-lantern-rise-a; --lantern-duration: 24s; --lantern-delay: -3s;  --tilt-duration: 5.4s; --tilt-delay: -0.6s; }
+.tbc-scene__lantern--2 { --lantern-left: 17%; --lantern-w: 3.4vw; --lantern-op: 0.8;  --lantern-rise: tbc-lantern-rise-b; --lantern-duration: 31s; --lantern-delay: -14s; --tilt-duration: 6.6s; --tilt-delay: -2.1s; }
+.tbc-scene__lantern--3 { --lantern-left: 31%; --lantern-w: 5.2vw; --lantern-op: 1;    --lantern-rise: tbc-lantern-rise-c; --lantern-duration: 27s; --lantern-delay: -9s;  --tilt-duration: 5s;   --tilt-delay: -3.4s; }
+.tbc-scene__lantern--4 { --lantern-left: 47%; --lantern-w: 3.8vw; --lantern-op: 0.85; --lantern-rise: tbc-lantern-rise-a; --lantern-duration: 33s; --lantern-delay: -22s; --tilt-duration: 7.2s; --tilt-delay: -1.3s; }
+.tbc-scene__lantern--5 { --lantern-left: 61%; --lantern-w: 4.8vw; --lantern-op: 0.97; --lantern-rise: tbc-lantern-rise-b; --lantern-duration: 25s; --lantern-delay: -6s;  --tilt-duration: 5.8s; --tilt-delay: -4s;   }
+.tbc-scene__lantern--6 { --lantern-left: 75%; --lantern-w: 3.3vw; --lantern-op: 0.78; --lantern-rise: tbc-lantern-rise-c; --lantern-duration: 30s; --lantern-delay: -17s; --tilt-duration: 6.2s; --tilt-delay: -0.2s; }
+.tbc-scene__lantern--7 { --lantern-left: 89%; --lantern-w: 4.2vw; --lantern-op: 0.9;  --lantern-rise: tbc-lantern-rise-a; --lantern-duration: 28s; --lantern-delay: -12s; --tilt-duration: 5.6s; --tilt-delay: -2.7s; }
+
+@media (prefers-reduced-motion: reduce) {
+  .tbc-scene__layer--rocket,
+  .tbc-scene__layer--float,
+  .tbc-scene__layer--float-alt,
+  .tbc-scene__moon--spin,
+  .tbc-scene__earth--spin,
+  .tbc-scene__orbit-item,
+  .tbc-scene__motif,
+  .tbc-scene__lamp,
+  .tbc-scene__lantern,
+  /* .tbc-scene__motif-img自体は無地(animation-name未指定)で、実際の
+     回転は「.tbc-scene__motif--xxx .tbc-scene__motif-img」という
+     子孫セレクタ（クラス2つ分＝詳細度0,2,0）で指定している。ここを
+     単なる.tbc-scene__motif-img（詳細度0,1,0）だけにすると詳細度で
+     負けてanimation:noneが効かないため、12種類（既存4＋新規8）とも
+     同じ子孫セレクタの形で明示的に列挙している。 */
+  .tbc-scene__motif--bouquet .tbc-scene__motif-img,
+  .tbc-scene__motif--gift .tbc-scene__motif-img,
+  .tbc-scene__motif--envelope .tbc-scene__motif-img,
+  .tbc-scene__motif--champagne .tbc-scene__motif-img,
+  .tbc-scene__motif--snowboard .tbc-scene__motif-img,
+  .tbc-scene__motif--whisky .tbc-scene__motif-img,
+  .tbc-scene__motif--delorean .tbc-scene__motif-img,
+  .tbc-scene__motif--oneokrock .tbc-scene__motif-img,
+  .tbc-scene__motif--kuromi .tbc-scene__motif-img,
+  .tbc-scene__motif--monchhichi .tbc-scene__motif-img,
+  .tbc-scene__motif--bean .tbc-scene__motif-img,
+  .tbc-scene__motif--pterodactyl .tbc-scene__motif-img,
+  .tbc-scene__motif--toy-clown .tbc-scene__motif-img,
+  .tbc-scene__motif--toy-boy .tbc-scene__motif-img,
+  .tbc-scene__motif--toy-girl .tbc-scene__motif-img,
+  .tbc-scene__motif--toy-man .tbc-scene__motif-img,
+  .tbc-scene__lantern-img {
+    animation: none;
+  }
+}
+
+/* ---------------- 最後のページ右下「TOPへ戻る」ボタン ---------------- */
+/* 本人指示「最後のページの右下あたりにトップへ戻るボタンを置きたい」を
+   受けて追加。暗い宇宙背景の上で視認性を確保するため、message-list.html
+   側の「MESSAGEに戻る」ボタン（.mlist__back）と同じ「白いピル型＋濃色の
+   枠線・影」の見た目に揃えている（サイト内の既存ボタンの型）。
+   4つの浮遊モチーフ（z-index最大4）より確実に手前に出るようz-indexを
+   大きめに設定。 */
+.tbc-scene__top-btn {
+  position: absolute;
+  right: 4vw;
+  bottom: 5vh;
+  z-index: 6;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 44px;
+  padding: 0 18px;
+  border: 2px solid #282828;
+  border-radius: 999px;
+  background: #FFFDF8;
+  color: #282828;
+  font-family: "Noto Sans JP", "Hiragino Kaku Gothic ProN", sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 3px 3px 0 #282828;
+  transition: transform 0.15s ease;
+}
+.tbc-scene__top-btn:hover { transform: translateY(-2px); }
+.tbc-scene__top-btn:focus-visible { outline: 3px solid #FD2B94; outline-offset: 2px; }
+
+@media (max-width: 768px) {
+  .tbc-scene__top-btn {
+    right: 4vw;
+    bottom: 4vh;
+    height: 40px;
+    padding: 0 14px;
+    font-size: 12px;
+  }
+}

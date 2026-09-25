@@ -1,0 +1,5 @@
+# 元素材（サイトでは未使用・容量大）
+assets/memory/
+# 作業メモ
+*.md
+.DS_Store

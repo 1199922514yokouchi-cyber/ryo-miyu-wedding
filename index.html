@@ -1,281 +1,1123 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ja">
-
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>happy_wedding</title>
-
-    <link rel="stylesheet" href="css/style.css">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&family=M+PLUS+Rounded+1c:wght@400;700&family=Onest:wght@900&display=swap" rel="stylesheet">
-
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swiper@12/swiper-bundle.min.css" />
-    <script src="https://cdn.jsdelivr.net/npm/swiper@12/swiper-bundle.min.js"></script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RYO &amp; MIYU | HAPPY WEDDING</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=Noto+Sans+JP:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/css/style.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
 </head>
+<body>
+<!-- 画面を覆う先出しオーバーレイ。2パターンある：
+     (1) 下層ページ（メッセージ一覧）の「MESSAGEに戻る」から帰ってきた
+         場合——このページはscrollY=0（FV先頭）から読み込まれるため、
+         後段でMESSAGEセクションまでスクロールを合わせ終えるまでの間、
+         FVなど他セクションが一瞬見えてしまう。
+     (2) それ以外＝サイトへの通常の入場（本人指示：「サイト開いた時の
+         演出ね。ロード/ロード終わる/幕が開く こんな感じにしたい」）
+         ——ロード演出（PT-13、assets/js/site-loader.js）が始まる前に
+         FVの中身が一瞬見えてしまうのを防ぐ。
+     どちらも「他の要素がパースされるより前に画面を覆っておきたい」
+     という理由は同じなので、この同期スクリプトで先に画面いっぱいの
+     divを先出ししている（assets/js/page-transition.jsの本体はこの後
+     <script src>で読み込むので、ここではその読み込みを待たずに直接
+     divを作っている。本体側のensureOverlay()がこのdivをid一致で
+     見つけて再利用する）。
+     (1)は最初から広がった状態の黄色マスクで覆い、末尾のインライン
+     スクリプトがすぼめて見せる（本人指示：「戻る時は広がったマスクが
+     閉じてトップページの中央に向かって小さくなっていく感じ」）。
+     (2)は黒背景で覆い、末尾のインラインスクリプトがPT-13ローダー
+     （カウントアップ＋進捗バー。賑やかなページ遷移カタログの
+     「X06：カウンターが割り込む」を採用）を再生してから、幕が
+     そのまま上へスライドして抜ける動き（slideOverlayAway）でFVを
+     現す。 -->
+<script>
+(function () {
+  try {
+    var isReturn = sessionStorage.getItem('wlpReturnToMessage') === '1';
+    var el = document.createElement('div');
+    el.id = 'pageTransitionMask';
+    el.setAttribute('aria-hidden', 'true');
+    el.style.position = 'fixed';
+    el.style.inset = '0';
+    el.style.zIndex = '99999';
+    el.style.pointerEvents = 'none';
+    el.style.clipPath = 'circle(150% at 50% 50%)';
+    el.style.background = isReturn
+      ? 'linear-gradient(178deg, #FDD22B 0%, #FFF1BB 60%)'
+      : '#282828';
+    document.body.appendChild(el);
+  } catch (e) { /* sessionStorageが使えない環境ではあきらめて通常表示 */ }
+})();
+</script>
 
-<body id="top">
+<!-- ==========================================================
+  スクロールステージ：body自体を縦長にして、ネイティブのスクロール
+  （ホイール/スワイプ/矢印キー/スペース、すべてブラウザ標準の挙動）で
+  ページを送る。各 .page は position:fixed で画面に固定され、
+  スクロール量(scrollY)から算出した比率でPT-09サークルマスクの半径や
+  本文(.about__text)のscrollTopを直接動かす。仕組みは assets/js/pager.js。
+=========================================================== -->
+<div class="scroll-stage" id="scrollStage">
+  <div class="scroll-stage__pin">
 
-    <button class="menu_bt" type="button" aria-expanded="false">
-        <img class="menu_bt_img" src="img/menu_bt.svg" alt="">
-    </button>
+    <!-- PAGE 1: FIRST VIEW (Wedding_FV / Figma node 820:8551) -->
+    <section class="page" id="page-fv" aria-label="ファーストビュー">
+      <div class="page__frame">
+        <div class="fv" id="fv">
+          <div class="fv__stage">
 
-    <main>
-
-        <section class="fv">
-            <picture>
-                <!-- 800px未満はスマホ版のFV画像に切り替え -->
-                <source srcset="img/fv_sp.jpg" media="(max-width: 800px)">
-                <img src="img/fv_pc.jpg" alt="Happy Wedding Ryo &amp; Miyu">
-            </picture>
-            <div class="petals" aria-hidden="true"></div>
-        </section>
-
-        <div class="column">
-            <div class="side_area left">
-                <div class="film"></div>
-            </div>
-            <div class="main_content">
-                <section class="about" id="about">
-                    <div class="poem">
-                        <div class="area1">
-                            <p>お祝いの気持ちを</p>
-                            <p>形として残したいと思い</p>
-                            <p>今の学びを活かせる</p>
-                            <p>Webサイトという形で</p>
-                            <p>祝うことに決めました。</p>
-                        </div>
-                        <div class="area2">
-                            <p>思い出と愛に溢れた</p>
-                            <p>ページになったかと思います。</p>
-                            <p>いつでもこのページを見にきて</p>
-                            <p>思い出に浸ってください。</p>
-                        </div>
-                        <div class="area3">
-                            <p>それではどうぞ</p>
-                            <p>お楽しみください。</p>
-                        </div>
-                    </div>
-                </section>
-
-                <section class="memory" id="memory">
-                    <header class="section_header">
-                        <h1>
-                            <p class="en">MEMORY</p>
-                            <p class="jp">思い出</p>
-                            <img class="memory_sticker" src="img/universal.png" alt="">
-                        </h1>
-                    </header>
-                    <div class="chirasu">
-                        <img class="photo_item" src="img/photo/memory/memory_10.jpeg" alt="">
-                        <img class="photo_item" src="img/photo/memory/memory_6.jpeg" alt="">
-                        <img class="photo_item" src="img/photo/memory/memory_4.png" alt="">
-                        <img class="photo_item" src="img/photo/memory/memory_1.png" alt="">
-                        <img class="photo_item" src="img/photo/memory/memory_8.jpeg" alt="">
-                    </div>
-
-                    <ul class="cards single">
-                        <li class="time">
-                            <img src="img/photo/memory/memory_9.jpeg" alt="">
-                            <a href="html/time.html" class="card_label">時系列で見る</a>
-                        </li>
-                        <li class="scene">
-                            <img src="img/photo/memory/memory_5.jpeg" alt="">
-                            <a href="#" class="card_label">シーン別に見る</a>
-                        </li>
-                    </ul>
-                </section>
-                <section class="message" id="message">
-                    <header class="section_header">
-                        <h1>
-                            <p class="en">MESSAGE</p>
-                            <p class="jp">お祝いメッセージ</p>
-                        </h1>
-                    </header>
-
-                    <ul class="select_tag">
-                        <li class="is-active"><a href="#">#ALL</a></li>
-                        <li><a href="#">#FAMILY</a></li>
-                        <li><a href="#">#FRIENDS</a></li>
-                    </ul>
-
-
-                    <div class="message_swiper swiper">
-                        <div class="swiper-wrapper">
-                            <div class="swiper-slide">
-                                <button type="button" class="message_card" data-name="お名前ダミー1" data-message="結婚おめでとう！ダミーメッセージです。フォーム提出後にここへ差し替わります。">
-                                    <div class="fr">
-                                        <img src="img/message.jpg" alt="">
-                                    </div>
-                                </button>
-                            </div>
-                            <div class="swiper-slide">
-                                <button type="button" class="message_card" data-name="お名前ダミー2" data-message="末長くお幸せに！ダミーメッセージです。フォーム提出後にここへ差し替わります。">
-                                    <div class="fr">
-                                        <img src="img/message.jpg" alt="">
-                                    </div>
-                                </button>
-                            </div>
-                            <div class="swiper-slide">
-                                <button type="button" class="message_card" data-name="お名前ダミー3" data-message="いつも仲良しな2人でいてください。ダミーメッセージです。">
-                                    <div class="fr">
-                                        <img src="img/message.jpg" alt="">
-                                    </div>
-                                </button>
-                            </div>
-                            <div class="swiper-slide">
-                                <button type="button" class="message_card" data-name="お名前ダミー4" data-message="ご結婚おめでとうございます。ダミーメッセージです。">
-                                    <div class="fr">
-                                        <img src="img/message.jpg" alt="">
-                                    </div>
-                                </button>
-                            </div>
-                            <div class="swiper-slide">
-                                <button type="button" class="message_card" data-name="お名前ダミー5" data-message="幸せな家庭を築いてください。ダミーメッセージです。">
-                                    <div class="fr">
-                                        <img src="img/message.jpg" alt="">
-                                    </div>
-                                </button>
-                            </div>
-                            <div class="swiper-slide">
-                                <button type="button" class="message_card" data-name="お名前ダミー6" data-message="これからも変わらず仲良くしてね。ダミーメッセージです。">
-                                    <div class="fr">
-                                        <img src="img/message.jpg" alt="">
-                                    </div>
-                                </button>
-                            </div>
-                        </div>
-                        <div class="ui">
-                            <div class="bt me_prev"></div>
-                            <div class="bt me_next"></div>
-                        </div>
-                    </div>
-                </section>
-                <section class="QandA" id="QandA">
-                    <header class="section_header">
-                        <h1>
-                            <p class="en">Q&A</p>
-                            <p class="jp">よくある質問</p>
-                        </h1>
-                    </header>
-                    <ul class="qa_cards">
-                        <li class="qa_card">
-                            <button class="qa_card-q" type="button" aria-expanded="false">
-                                <span class="label">Q</span>
-                                <span class="text">2人の出逢いは？</span>
-                                <span class="qa_toggle" aria-hidden="true"></span>
-                            </button>
-                            <div class="qa_card-a">
-                                <div class="qa_card-a_inner">
-                                    <span class="label">A</span>
-                                    <p class="text">中学校から友達ではありましたが、高校を卒業後、一緒にスノーボードに行ったのがきっかけです。</p>
-                                </div>
-                            </div>
-                        </li>
-                        <li class="qa_card">
-                            <button class="qa_card-q" type="button" aria-expanded="false">
-                                <span class="label">Q</span>
-                                <span class="text">プロポーズの言葉は？</span>
-                                <span class="qa_toggle" aria-hidden="true"></span>
-                            </button>
-                            <div class="qa_card-a">
-                                <div class="qa_card-a_inner">
-                                    <span class="label">A</span>
-                                    <p class="text">ここに回答が入る</p>
-                                </div>
-                            </div>
-                        </li>
-                        <li class="qa_card">
-                            <button class="qa_card-q" type="button" aria-expanded="false">
-                                <span class="label">Q</span>
-                                <span class="text">お互いの好きなところは？</span>
-                                <span class="qa_toggle" aria-hidden="true"></span>
-                            </button>
-                            <div class="qa_card-a">
-                                <div class="qa_card-a_inner">
-                                    <span class="label">A</span>
-                                    <p class="text">ここに回答が入る</p>
-                                </div>
-                            </div>
-                        </li>
-                    </ul>
-
-                    <div class="qa_bt">
-                        <a href="html/contact.html">
-                            <div class="contact">
-                                <p>お問い合わせ</p>
-                            </div>
-                        </a>
-                    </div>
-                </section>
-
-                <section class="fin" id="fin">
-                    <header class="section_header">
-                        <h1>
-                            <p class="en">FIN</p>
-                            <p class="jp">最後に</p>
-                        </h1>
-                    </header>
-                    <div class="owarini">
-                        <div class="owarini_block">
-                            <p>2人と出会ってから</p>
-                            <p>人生がとても明るくなったと感じます。</p>
-                            <p>好きなことに熱中し、周りを巻き込んで</p>
-                            <p>楽しむことができる2人のパワーが</p>
-                            <p>そうさせたのだと思います。</p>
-                            <p>これからもそのパワーを絶やすことなく、</p>
-                            <p>夫婦として幸せを築いていって欲しいと</p>
-                            <p>思います。</p>
-                        </div>
-                        <div class="owarini_block">
-                            <p>改めてご結婚おめでとうございます。</p>
-                        </div>
-                    </div>
-                </section>
-                <p class="copyright">© 2026 yoko kazu</p>
-                <footer>
-                    <a href="#top" class="totop_bt">TOP</a>
-                    <p>
-                        <span>THANKS</span>
-                        <span>FOR</span>
-                        <span>WATCHING</span>
-                    </p>
-                </footer>
+            <!-- 画像レイヤー：9(最背面)→1(最前面)の順にDOMへ -->
+            <div class="fv__layers">
+              <img class="fv__layer" src="assets/img/wedding_fv_layer_9.webp" alt="" aria-hidden="true">
+              <img class="fv__layer" src="assets/img/wedding_fv_layer_8.webp" alt="" aria-hidden="true">
+              <img class="fv__layer" src="assets/img/wedding_fv_layer_7.webp" alt="" aria-hidden="true">
+              <img class="fv__layer" src="assets/img/wedding_fv_layer_6.webp" alt="" aria-hidden="true">
+              <img class="fv__layer" src="assets/img/wedding_fv_layer_5.webp" alt="" aria-hidden="true">
+              <img class="fv__layer" src="assets/img/wedding_fv_layer_4.webp" alt="" aria-hidden="true">
+              <img class="fv__layer" src="assets/img/wedding_fv_layer_3.webp" alt="" aria-hidden="true">
+              <img class="fv__layer" src="assets/img/wedding_fv_layer_2.webp" alt="ゲストの集合写真コラージュ">
+              <img class="fv__layer" src="assets/img/wedding_fv_layer_1.webp" alt="" aria-hidden="true">
             </div>
 
-            <div class="side_area right">
-                <div class="film"></div>
+            <!-- 花びらが舞い散る演出（AU-XX）。本人指示「ファーストビューの
+                 花びらの写真があると思うんだけどそれを散らすように動かして
+                 ほしい。基本的には上から下に落ちてくる感じで、花びらっぽく
+                 左右に多少揺れながらがいいね。それをループさせる感じ。
+                 回転しながらのやつもあってもいいかも」への対応。
+                 詳細はassets/css/style.cssの.fv__petals関連コメント参照
+                 （元々レイヤー3・7に1枚絵として焼き込まれていた花びらを
+                 15枚の個別画像に切り出し、1枚ずつ独立して落下・回転
+                 できるようにした）。
+                 ※本人指摘「角にあった花びらかな？丸みがなくて不自然だから
+                 そういうのは非表示にしておいて」への対応：15枚のうち1枚
+                 （元fv-petal-01.webp）は元画像の左上の角ぎりぎりに写って
+                 いた花びらで、切り出すと角の2辺が直線に切れてしまい
+                 （元の絵の中では画面外に続いている想定の切れ方だった）、
+                 他の花びらのような丸みのある自然な輪郭にならなかったため、
+                 この1枚だけ非表示にした（該当画像ファイル自体も不要に
+                 なったため削除済み）。
+                 ※本人指摘「中央の赤い花びらが一つ切れてるところある
+                 から確認して非表示にして」への対応：残り14枚を拡大して
+                 確認したところ、大きめの赤い花びら（元fv-petal-13.webp）
+                 も同様に元画像の左端ぎりぎりで絵が途切れており、左辺が
+                 直線に切れた不自然な輪郭になっていた（他の赤い花びら
+                 3枚は問題なし）。この1枚も非表示にし、画像ファイルは
+                 削除済み。 -->
+            <div class="fv__petals" aria-hidden="true">
+              <div class="fv__petal fv__petal--2"><img class="fv__petal-img" src="assets/img/fv-petal-02.webp" alt=""></div>
+              <div class="fv__petal fv__petal--3"><img class="fv__petal-img fv__petal-img--ccw" src="assets/img/fv-petal-03.webp" alt=""></div>
+              <div class="fv__petal fv__petal--4"><img class="fv__petal-img" src="assets/img/fv-petal-04.webp" alt=""></div>
+              <div class="fv__petal fv__petal--5"><img class="fv__petal-img fv__petal-img--cw" src="assets/img/fv-petal-05.webp" alt=""></div>
+              <div class="fv__petal fv__petal--6"><img class="fv__petal-img" src="assets/img/fv-petal-06.webp" alt=""></div>
+              <div class="fv__petal fv__petal--7"><img class="fv__petal-img fv__petal-img--ccw" src="assets/img/fv-petal-07.webp" alt=""></div>
+              <div class="fv__petal fv__petal--8"><img class="fv__petal-img" src="assets/img/fv-petal-08.webp" alt=""></div>
+              <div class="fv__petal fv__petal--9"><img class="fv__petal-img" src="assets/img/fv-petal-09.webp" alt=""></div>
+              <div class="fv__petal fv__petal--10"><img class="fv__petal-img fv__petal-img--cw" src="assets/img/fv-petal-10.webp" alt=""></div>
+              <div class="fv__petal fv__petal--11"><img class="fv__petal-img" src="assets/img/fv-petal-11.webp" alt=""></div>
+              <div class="fv__petal fv__petal--12"><img class="fv__petal-img fv__petal-img--ccw" src="assets/img/fv-petal-12.webp" alt=""></div>
+              <div class="fv__petal fv__petal--14"><img class="fv__petal-img" src="assets/img/fv-petal-14.webp" alt=""></div>
+              <div class="fv__petal fv__petal--15"><img class="fv__petal-img fv__petal-img--cw" src="assets/img/fv-petal-15.webp" alt=""></div>
             </div>
+
+            <!-- 上帯：AU-02 無限マーキー
+                 本人指示「流れる文字をhappy weddingとryo&miyuの二つを交互に
+                 流したい。上のカルーセルの文字を下に流れてるカルーセルと
+                 同じにしたい」を受けて、以前のHAPPY WEDDINGのみの構成から
+                 下帯と同じ「HAPPY WEDDING ⇄ RYO&MIYU」の交互構成に変更。
+                 流れる向きは従来どおり上下で逆（style.css側で下帯のみ
+                 animation-direction: reverse）。 -->
+            <div class="fv__band fv__band--top">
+              <div class="fv__marquee" data-marquee>
+                <div class="fv__marquee-track">
+                  <span class="fv__marquee-item">HAPPY WEDDING</span>
+                  <span class="fv__marquee-item fv__marquee-item--name">RY<span class="fv__amp">O&amp;</span>MIYU</span>
+                  <span class="fv__marquee-item">HAPPY WEDDING</span>
+                  <span class="fv__marquee-item fv__marquee-item--name">RY<span class="fv__amp">O&amp;</span>MIYU</span>
+                  <span class="fv__marquee-item">HAPPY WEDDING</span>
+                  <span class="fv__marquee-item fv__marquee-item--name">RY<span class="fv__amp">O&amp;</span>MIYU</span>
+                  <span class="fv__marquee-item">HAPPY WEDDING</span>
+                  <span class="fv__marquee-item fv__marquee-item--name">RY<span class="fv__amp">O&amp;</span>MIYU</span>
+                </div>
+                <div class="fv__marquee-track" aria-hidden="true">
+                  <span class="fv__marquee-item">HAPPY WEDDING</span>
+                  <span class="fv__marquee-item fv__marquee-item--name">RY<span class="fv__amp">O&amp;</span>MIYU</span>
+                  <span class="fv__marquee-item">HAPPY WEDDING</span>
+                  <span class="fv__marquee-item fv__marquee-item--name">RY<span class="fv__amp">O&amp;</span>MIYU</span>
+                  <span class="fv__marquee-item">HAPPY WEDDING</span>
+                  <span class="fv__marquee-item fv__marquee-item--name">RY<span class="fv__amp">O&amp;</span>MIYU</span>
+                  <span class="fv__marquee-item">HAPPY WEDDING</span>
+                  <span class="fv__marquee-item fv__marquee-item--name">RY<span class="fv__amp">O&amp;</span>MIYU</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- 下帯：AU-02 無限マーキー（中央にRYO&MIYUを挟む） -->
+            <div class="fv__band fv__band--bottom">
+              <div class="fv__marquee" data-marquee>
+                <div class="fv__marquee-track">
+                  <span class="fv__marquee-item">HAPPY WEDDING</span>
+                  <span class="fv__marquee-item fv__marquee-item--name">RY<span class="fv__amp">O&amp;</span>MIYU</span>
+                  <span class="fv__marquee-item">HAPPY WEDDING</span>
+                  <span class="fv__marquee-item fv__marquee-item--name">RY<span class="fv__amp">O&amp;</span>MIYU</span>
+                  <span class="fv__marquee-item">HAPPY WEDDING</span>
+                  <span class="fv__marquee-item fv__marquee-item--name">RY<span class="fv__amp">O&amp;</span>MIYU</span>
+                  <span class="fv__marquee-item">HAPPY WEDDING</span>
+                  <span class="fv__marquee-item fv__marquee-item--name">RY<span class="fv__amp">O&amp;</span>MIYU</span>
+                </div>
+                <div class="fv__marquee-track" aria-hidden="true">
+                  <span class="fv__marquee-item">HAPPY WEDDING</span>
+                  <span class="fv__marquee-item fv__marquee-item--name">RY<span class="fv__amp">O&amp;</span>MIYU</span>
+                  <span class="fv__marquee-item">HAPPY WEDDING</span>
+                  <span class="fv__marquee-item fv__marquee-item--name">RY<span class="fv__amp">O&amp;</span>MIYU</span>
+                  <span class="fv__marquee-item">HAPPY WEDDING</span>
+                  <span class="fv__marquee-item fv__marquee-item--name">RY<span class="fv__amp">O&amp;</span>MIYU</span>
+                  <span class="fv__marquee-item">HAPPY WEDDING</span>
+                  <span class="fv__marquee-item fv__marquee-item--name">RY<span class="fv__amp">O&amp;</span>MIYU</span>
+                </div>
+              </div>
+            </div>
+
+          </div>
         </div>
-    </main>
+      </div>
+    </section>
 
-    <!-- 右上の丸ボタンで開閉するモーダルメニュー -->
-    <nav class="modal_menu" id="modal_menu">
-        <div class="modal_menu_panel">
-            <button class="modal_menu_close" type="button"></button>
-            <ul>
-                <li><a href="#top">TOP</a></li>
-                <li><a href="#about">ABOUT</a></li>
-                <li><a href="#memory">MEMORY</a></li>
-                <li><a href="#message">MESSAGE</a></li>
-                <li><a href="#QandA">Q&amp;A</a></li>
-                <li><a href="#fin">FIN</a></li>
-            </ul>
+    <!-- PAGE 2: ABOUT（Wedding_ABOUT / Figma node 835:11104）
+         1→2 の遷移は PT-09（サークルマスク）。 -->
+    <section class="page" id="page-about" aria-label="このページについて">
+      <div class="page__frame">
+        <div class="about" id="about">
+          <div class="about__stage">
+
+            <!-- トンネル背景：Figmaの実測値(Subtractレイヤー5枚)をそのまま再現 -->
+            <div class="about__tunnel" aria-hidden="true">
+              <div class="about__ring about__ring--5"></div>
+              <div class="about__ring about__ring--4"></div>
+              <div class="about__ring about__ring--3"></div>
+              <div class="about__ring about__ring--2"></div>
+              <div class="about__ring about__ring--1"></div>
+            </div>
+
+            <svg class="about__arc-text" viewBox="0 0 1440 900" aria-hidden="true">
+              <defs>
+                <path id="aboutArcHead" d="M 426,132 Q 720,132 1014,132" />
+                <path id="aboutArcSub"  d="M 530,170 Q 720,170 910,170" />
+              </defs>
+              <text class="about__arc-head">
+                <textPath href="#aboutArcHead" startOffset="50%" text-anchor="middle">ABOUT</textPath>
+              </text>
+              <text class="about__arc-sub">
+                <textPath href="#aboutArcSub" startOffset="50%" text-anchor="middle">このページについて</textPath>
+              </text>
+            </svg>
+
+            <div class="about__photo">
+              <img src="assets/img/about.webp" alt="ふたりの写真" onerror="this.style.display='none'; this.parentElement.classList.add('is-placeholder')">
+              <span class="about__photo-label">ABOUT.jpg</span>
+            </div>
+
+            <!-- 本文：写真/背景は固定、この枠だけスクロールする。
+                 内側(.about__text-inner)の上下パディングが画面の半分の高さ分あるので、
+                 最初の行はスクロール前から画面中央に、最後の行もスクロールし切ると
+                 画面中央で止まる（Figmaの行間240%はそのまま維持）。 -->
+            <div class="about__text">
+              <div class="about__text-inner" data-readline-group>
+                <p data-readline>お祝いの気持ちを</p>
+                <p data-readline>形として残したいと思い、</p>
+                <p data-readline>今の学びを活かせる</p>
+                <p data-readline>Webサイトという形で</p>
+                <p data-readline>お祝いすることに決めました。</p>
+                <p class="about__text-space" aria-hidden="true">&nbsp;</p>
+                <p data-readline>思い出と愛に溢れた</p>
+                <p data-readline>ページになったかと思います。</p>
+                <p data-readline>いつでもこのページを見にきて</p>
+                <p data-readline>思い出に浸ってください。</p>
+                <p class="about__text-space" aria-hidden="true">&nbsp;</p>
+                <p data-readline>それではどうぞ</p>
+                <p data-readline>　お楽しみください。</p>
+              </div>
+            </div>
+
+          </div>
         </div>
-    </nav>
+      </div>
+    </section>
 
+    <!-- PAGE 3: MEMORY（Wedding_MEMORY / 横に伸ばしたFigmaカンプ＋実写真・実動画より）
+         2→3 の遷移：ABOUTは固定のまま、MEMORYが画面左から水平に重なって
+         現れ、そのまま同じ「左→右へ流れる」動きの続きとして、横に長い
+         キャンバス(実測3661x900、通常フレームの約2.54倍幅)をパンして
+         写真を左から右へ画面に運んでいく（新しい写真は画面左から入ってきて
+         右へ流れ、右へ抜けていく）。仕組みは assets/js/pager.js のフェーズC
+         （前半＝MEMORYフレームの水平スライドイン／後半＝内側キャンバスの
+         水平パン）。 -->
+    <section class="page" id="page-memory" aria-label="思い出">
+      <div class="page__frame">
+        <div class="memory" id="memory">
+          <div class="memory__stage">
+            <!-- 横に長いキャンバス本体。フレーム(=通常のビューポート幅)より
+                 372vw幅があり（元はFigmaカンプの254.2361vw＝3661/1440。本人指示
+                 「写真がここに纏まっちゃってるので、セクション自体の長さ増やして
+                 いいので散らばらせたい」で延長）、pager.jsがこれをtranslateXして
+                 スクロールに連動してパンさせる（写真が左から右へ流れて
+                 見えるよう、キャンバスは-memoryPanDist→0pxへパンする）。 -->
+            <div class="memory__canvas" id="memoryCanvas">
 
-    <div class="message_modal" id="message_modal">
-        <div class="message_modal_panel">
-            <button class="message_modal_close" type="button"></button>
-            <p class="message_modal_name"></p>
-            <p class="message_modal_text"></p>
+              <!-- フォトギャラリー：元はFigmaカンプの実測位置のまま散らした配置
+                   だったが、本人指示「写真がここに纏まっちゃってるので散らばら
+                   せたい」「上下のフィルムのせいで見切れちゃってる写真とかある
+                   から、その写真は少し中央寄せにもしたい」を受けて配置し直した：
+                   - 横：延長したキャンバス（372vw）に約30vw間隔で重ならないよう
+                     並べ、上下交互のジグザグに散らす。最後の画面（左端0〜100vw）は
+                     中央下を「もっと思い出を振り返る」ボタンのために空けてある。
+                   - 縦：以前は横幅基準のvwで上からの位置を決めていたため、横長の
+                     画面ほどフレームの高さが足りず下の帯に写真がかかっていた。
+                     「上の帯の下端〜下の帯の上端」の空き（100% − 帯2本 − 余白 −
+                     写真の高さ）のうち何割の位置に置くか、で指定し直したので、
+                     どの画面比率でも帯にかからない（calc内の0〜1の数字がその割合）。
+                   - パンが長くなったぶん奥行き（data-depth）によるずれも大きく
+                     なるので、奥行きの差は元の約0.57倍に縮めてある。
+                   写真にカーソルを乗せるとMEMORYのカーソルラベルが回り、
+                   動画カードに乗せるとPLAYのカーソルラベルに切り替わる
+                   （挙動は assets/js/memory-cursor.js、動画再生は
+                   assets/js/memory-video.js）。 -->
+              <div class="memory__gallery">
+                <figure class="memory__photo" data-cursor="reel" data-depth="0.914" style="left:5vw; top:calc(8.4444vw + 0.92 * (100% - 16.8888vw - 18.3333vw)); width:24.3056vw; height:18.3333vw;">
+                  <img src="assets/img/memory_2.jpg" alt="" loading="lazy" onerror="this.style.display='none'; this.parentElement.classList.add('is-placeholder')">
+                  <figcaption class="memory__photo-label">MEMORY 02</figcaption>
+                </figure>
+                <figure class="memory__photo" data-cursor="reel" data-depth="1.085" style="left:34vw; top:calc(8.4444vw + 0.0 * (100% - 16.8888vw - 23.5417vw)); width:31.25vw; height:23.5417vw;">
+                  <img src="assets/img/memory_4.jpg" alt="" loading="lazy" onerror="this.style.display='none'; this.parentElement.classList.add('is-placeholder')">
+                  <figcaption class="memory__photo-label">MEMORY 04</figcaption>
+                </figure>
+                <figure class="memory__photo memory__video-card" data-cursor="play" data-depth="1.0" style="left:71vw; top:calc(8.4444vw + 0.78 * (100% - 16.8888vw - 18.75vw)); width:26.3889vw; height:18.75vw;">
+                  <video class="memory__video" src="assets/video/memory_movie7.mp4" poster="assets/img/memory_movie7_poster.jpg" playsinline preload="metadata" loop></video>
+                  <button class="memory__video-toggle" type="button" aria-label="動画を再生">
+                    <!-- 再生アイコン：border三角形の代わりにSVGにして、YouTubeの
+                         再生アイコンくらい角を丸める(stroke-linejoinで実現)。 -->
+                    <svg class="memory__video-icon memory__video-icon--play" viewBox="0 0 36 36" aria-hidden="true">
+                      <path d="M12 9 L26 18 L12 27 Z" />
+                    </svg>
+                    <svg class="memory__video-icon memory__video-icon--pause" viewBox="0 0 36 36" aria-hidden="true">
+                      <rect x="10" y="8" width="6" height="20" rx="3" />
+                      <rect x="20" y="8" width="6" height="20" rx="3" />
+                    </svg>
+                  </button>
+                </figure>
+                <figure class="memory__photo" data-cursor="reel" data-depth="0.932" style="left:108vw; top:calc(8.4444vw + 0.2 * (100% - 16.8888vw - 15.6944vw)); width:20.8333vw; height:15.6944vw;">
+                  <img src="assets/img/memory_9.jpg" alt="" loading="lazy" onerror="this.style.display='none'; this.parentElement.classList.add('is-placeholder')">
+                  <figcaption class="memory__photo-label">MEMORY 09</figcaption>
+                </figure>
+                <figure class="memory__photo" data-cursor="reel" data-depth="1.068" style="left:134vw; top:calc(8.4444vw + 0.95 * (100% - 16.8888vw - 20.9028vw)); width:27.7778vw; height:20.9028vw;">
+                  <img src="assets/img/memory_6.jpg" alt="" loading="lazy" onerror="this.style.display='none'; this.parentElement.classList.add('is-placeholder')">
+                  <figcaption class="memory__photo-label">MEMORY 06</figcaption>
+                </figure>
+                <figure class="memory__photo" data-cursor="reel" data-depth="0.943" style="left:168vw; top:calc(8.4444vw + 0.08 * (100% - 16.8888vw - 20.9028vw)); width:27.7778vw; height:20.9028vw;">
+                  <img src="assets/img/memory_5.jpg" alt="" loading="lazy" onerror="this.style.display='none'; this.parentElement.classList.add('is-placeholder')">
+                  <figcaption class="memory__photo-label">MEMORY 05</figcaption>
+                </figure>
+                <figure class="memory__photo" data-cursor="reel" data-depth="1.057" style="left:205vw; top:calc(8.4444vw + 0.82 * (100% - 16.8888vw - 18.3333vw)); width:24.3056vw; height:18.3333vw;">
+                  <img src="assets/img/memory_10.jpg" alt="" loading="lazy" onerror="this.style.display='none'; this.parentElement.classList.add('is-placeholder')">
+                  <figcaption class="memory__photo-label">MEMORY 10</figcaption>
+                </figure>
+                <figure class="memory__photo" data-cursor="reel" data-depth="0.92" style="left:236vw; top:calc(8.4444vw + 0.05 * (100% - 16.8888vw - 15.6944vw)); width:20.8333vw; height:15.6944vw;">
+                  <img src="assets/img/memory_3.jpg" alt="" loading="lazy" onerror="this.style.display='none'; this.parentElement.classList.add('is-placeholder')">
+                  <figcaption class="memory__photo-label">MEMORY 03</figcaption>
+                </figure>
+                <figure class="memory__photo" data-cursor="reel" data-depth="1.08" style="left:262vw; top:calc(8.4444vw + 0.68 * (100% - 16.8888vw - 15.625vw)); width:20.8333vw; height:15.625vw;">
+                  <img src="assets/img/memory_7.jpg" alt="" loading="lazy" onerror="this.style.display='none'; this.parentElement.classList.add('is-placeholder')">
+                  <figcaption class="memory__photo-label">MEMORY 07</figcaption>
+                </figure>
+                <figure class="memory__photo" data-cursor="reel" data-depth="0.954" style="left:292vw; top:calc(8.4444vw + 0.0 * (100% - 16.8888vw - 21.3889vw)); width:28.4028vw; height:21.3889vw;">
+                  <img src="assets/img/memory_1.jpg" alt="" loading="lazy" onerror="this.style.display='none'; this.parentElement.classList.add('is-placeholder')">
+                  <figcaption class="memory__photo-label">MEMORY 01</figcaption>
+                </figure>
+                <figure class="memory__photo" data-cursor="reel" data-depth="1.103" style="left:332vw; top:calc(8.4444vw + 0.88 * (100% - 16.8888vw - 23.5417vw)); width:31.25vw; height:23.5417vw;">
+                  <img src="assets/img/memory_8.jpg" alt="" loading="lazy" onerror="this.style.display='none'; this.parentElement.classList.add('is-placeholder')">
+                  <figcaption class="memory__photo-label">MEMORY 08</figcaption>
+                </figure>
+              </div>
+
+              <!-- 本人構想「『もっと思い出を振り返る』ボタンをトップページの
+                   memoryセクションの終わりに作る」。キャンバスを右端まで
+                   パンし終えた最後の画面で、MEMORY 01・07・08の間に空いて
+                   いる場所に置いている（位置はstyle.cssの.memory__more）。
+                   押すとこの空間へズームインしながらmemory-list.html
+                   （MEMORY下層ページ）へ移る（assets/js/memory-more.js）。 -->
+              <a class="memory__more" href="memory-list.html" id="memoryMore">
+                <span class="memory__more-label">もっと思い出を振り返る</span>
+                <span class="memory__more-arrow" aria-hidden="true">
+                  <svg viewBox="0 0 14 14"><path d="M5 2 L11 7 L5 12" fill="none" stroke="#282828" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </span>
+              </a>
+
+              <!-- 上下のイエロー帯（フィルムのスプロケット穴のような白いピルを並べたモチーフ）。
+                   カンプが横に伸びた分、帯とピルの並びもキャンバス全幅に合わせて延長している。 -->
+              <div class="memory__band memory__band--top" aria-hidden="true">
+                <div class="memory__sprockets memory__sprockets--top">
+                  <span class="memory__sprocket"></span><span class="memory__sprocket"></span><span class="memory__sprocket"></span><span class="memory__sprocket"></span><span class="memory__sprocket"></span><span class="memory__sprocket"></span><span class="memory__sprocket"></span><span class="memory__sprocket"></span><span class="memory__sprocket"></span><span class="memory__sprocket"></span><span class="memory__sprocket"></span><span class="memory__sprocket"></span><span class="memory__sprocket"></span><span class="memory__sprocket"></span><span class="memory__sprocket"></span><span class="memory__sprocket"></span><span class="memory__sprocket"></span><span class="memory__sprocket"></span><span class="memory__sprocket"></span><span class="memory__sprocket"></span><span class="memory__sprocket"></span><span class="memory__sprocket"></span><span class="memory__sprocket"></span><span class="memory__sprocket"></span><span class="memory__sprocket"></span><span class="memory__sprocket"></span><span class="memory__sprocket"></span><span class="memory__sprocket"></span><span class="memory__sprocket"></span><span class="memory__sprocket"></span><span class="memory__sprocket"></span><span class="memory__sprocket"></span><span class="memory__sprocket"></span><span class="memory__sprocket"></span>
+                </div>
+              </div>
+              <div class="memory__band memory__band--bottom" aria-hidden="true">
+                <div class="memory__sprockets memory__sprockets--bottom">
+                  <span class="memory__sprocket"></span><span class="memory__sprocket"></span><span class="memory__sprocket"></span><span class="memory__sprocket"></span><span class="memory__sprocket"></span><span class="memory__sprocket"></span><span class="memory__sprocket"></span><span class="memory__sprocket"></span><span class="memory__sprocket"></span><span class="memory__sprocket"></span><span class="memory__sprocket"></span><span class="memory__sprocket"></span><span class="memory__sprocket"></span><span class="memory__sprocket"></span><span class="memory__sprocket"></span><span class="memory__sprocket"></span><span class="memory__sprocket"></span><span class="memory__sprocket"></span><span class="memory__sprocket"></span><span class="memory__sprocket"></span><span class="memory__sprocket"></span><span class="memory__sprocket"></span><span class="memory__sprocket"></span><span class="memory__sprocket"></span><span class="memory__sprocket"></span><span class="memory__sprocket"></span><span class="memory__sprocket"></span><span class="memory__sprocket"></span><span class="memory__sprocket"></span><span class="memory__sprocket"></span><span class="memory__sprocket"></span><span class="memory__sprocket"></span><span class="memory__sprocket"></span><span class="memory__sprocket"></span><span class="memory__sprocket"></span>
+                </div>
+              </div>
+
+            </div>
+          </div>
         </div>
-    </div>
+      </div>
+    </section>
 
-    <script src="js/function.js"></script>
+    <!-- PAGE 4: MESSAGE（Wedding_MASSEGE / Figma node 820:9341）
+         3→4 の遷移はNP-X18（リールが回って止まる）と「MEMORYが端まで
+         行ったら固定され、その下に続くようにMESSAGEが現れる」という
+         プッシュ型のスクロール切り替えを組み合わせている（層を重ねて
+         隠す方式ではなく、MEMORYが画面上へスクロールアウトしながら
+         MESSAGEが画面下から入れ替わりに現れる。仕組みは
+         assets/js/pager.jsのフェーズD、setMemoryExit()と
+         setMessageEnter()を同じratioで同期させている）。
+         それと同じスクロール量で、中央のメールアイコン風カードが
+         上から降りてきながら横方向（rotateY）に1回転スピンし
+         （元は3回転だったが、本人指示により2回転ぶん減らした）、
+         減速しながら正面・中央でぴたっと止まる——という一連の動きを
+         「リールが回って止まる」演出として扱っている。背景のアプリ
+         アイコン風タイルはタイトル・見出しと同じく.message__stage自体
+         の動きにそのまま乗って現れるだけ（本人指示により、以前あった
+         「タイルだけ一段遅れて登ってくる」独自の動きは削除し、
+         MESSAGEの文字などと一緒に固定している）。タイルの中身
+         (.message__bg-tiles)だけは常時ゆっくり斜めにスライドし続ける
+         （BG-15 流れる斜めストライプ、スクロール量とは無関係な自動
+         ループ）。カードは表面(--front)と裏面(--back)の2枚の平面を
+         重ねた「両面カード」構造（3Dモデルではなく、CSSの
+         backface-visibility:hiddenと裏面だけrotateY(180deg)しておく
+         定番テクニック）になっており、回転中も常にどちらかの面が
+         見えている＝以前あった「回転中に完全に消えて見える」問題を
+         解消している（裏面は本人指示により無地）。カードは回転中は
+         クリックできず、正面で止まった後だけクリック可能＆
+         vanilla-tilt.jsによるマウス追従のチルト効果が効く
+         （assets/js/message-card.js）。前面カードを押すと下層ページ
+         （メッセージ一覧、message-list.html）へ遷移する。 -->
+    <section class="page" id="page-message" aria-label="いただいたメッセージ">
+      <div class="page__frame">
+        <div class="message" id="message">
+          <div class="message__stage">
 
+            <!-- 背景：イエローグラデーション -->
+            <div class="message__yellow-bg" aria-hidden="true"></div>
+
+            <!-- 背景：ぼかし済みのkaomojiアプリアイコン風タイル。タイトル・
+                 見出し・カードと同じく.message__stage自体のtranslateY
+                 （フェーズD）にそのまま乗って現れるだけで、別途
+                 スクロール連動のアニメーションは掛けていない（本人指示
+                 により、以前あった「タイルだけ一段遅れて登ってくる」
+                 独自の動きは削除した）。内側の.message__bg-tilesだけは
+                 常時CSSアニメーションで斜めにスライドし続ける。 -->
+            <div class="message__bg-rise" aria-hidden="true">
+              <div class="message__bg-tiles"></div>
+            </div>
+
+            <!-- 見出し：本人から支給されたグラフィック素材をそのまま使用
+                 （タイトル「MESSAGE」＋サブ見出し「お祝いメッセージが
+                 届いてます！」）。 -->
+            <img class="message__title" src="assets/img/message_title.png" alt="MESSAGE">
+            <img class="message__heading" src="assets/img/message_heading.png" alt="お祝いメッセージが届いてます！">
+
+            <!-- 中央のメールアイコン風カード。.message__scene がperspectiveの
+                 土台、.message__card がスクロールに連動して回転しながら
+                 上から現れ、正面・中央で固定される本体（フェーズDの詳細は
+                 pager.js側のコメント参照。回転軸は横方向＝rotateY）。
+                 固定後はis-settledが付与され、クリック可能＆
+                 vanilla-tilt.js（CDN読み込み、body末尾）によるマウス追従
+                 チルト演出が有効になる（assets/js/message-card.js）。
+                 カード本体・バッジも本人支給のグラフィック素材を使用。
+
+                 回転中「消える」問題への対応：3Dモデルは使わず、
+                 CSSの定番の「両面カード」テクニックで解決している
+                 ——表面(--front)と裏面(--back)の2枚の平面を同じ場所に
+                 重ね、両方に backface-visibility:hidden をかけ、裏面だけ
+                 あらかじめ rotateY(180deg) しておく。こうすると
+                 messageCard自体が回転した時、表がこちらを向いている間は
+                 表面だけが見え（裏面は自分から見て後ろを向くので隠れる）、
+                 半回転したところで裏面がちょうどこちらを向いて入れ替わりに
+                 見える、というだけの仕組み（3Dモデリングは不要）。
+                 裏面は本人指示により無地でよいとのことなので、表面の
+                 配色に合わせた無地のグラデーションプレートのみ
+                 （アイコン等は置かない）。 -->
+            <div class="message__scene" id="messageScene">
+              <div class="message__card" id="messageCard" role="button" tabindex="0" aria-label="いただいたメッセージ一覧を見る">
+                <div class="message__card-face message__card-face--front">
+                  <img class="message__card-envelope" src="assets/img/message_envelope.png" alt="">
+                  <img class="message__card-badge" src="assets/img/message_badge-22.svg" alt="22件のメッセージ">
+                </div>
+                <div class="message__card-face message__card-face--back" aria-hidden="true"></div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 5ページ目：Q&A。4→5の遷移は、MEMORY→MESSAGEと同じ「プッシュ型」
+         （QAはMESSAGEの下の層に最初から存在していて、MESSAGEが画面
+         いっぱいまで収まった状態からさらにスクロールすると、MESSAGE
+         全体が画面の上へ押し出され、入れ替わりにQAが画面の下から
+         現れる。本人指示：「MESSAGEセクションが全画面表示サイズに
+         なる／スクロールで上に流れる／下の層(Q&A)が見えてくる」）。
+         仕組みはpager.js側のsetMessageExit()/setQaEnter()を参照。
+
+         QA本体（質問→回答→ステッカーのポップイン、カード送り）は
+         assets/js/qa.js。もともと本人がcodexでqa.htmlとして別途
+         試作していたものを、このpager.jsの仕組みに統合し直したもの
+         （詳細はstyle.css・qa.js側のコメント参照）。 -->
+    <section class="page" id="page-qa" aria-label="二人へのQ&A">
+      <div class="page__frame">
+        <div class="qa" id="qa">
+          <div class="qa__stage" id="qaStage">
+            <div class="qa__bg" aria-hidden="true"></div>
+            <div class="qa__ring" aria-hidden="true"></div>
+
+            <header class="qa__heading">
+              <h2 class="qa__heading-title">Q&amp;A</h2>
+              <p class="qa__heading-sub">2人に質問してみました！</p>
+            </header>
+
+            <div class="qa__scene" id="qaScene">
+              <article class="qa__bubble qa__bubble--question" id="qaQuestion" aria-live="polite">
+                <span class="qa__label qa__label--q" aria-hidden="true">Q</span>
+                <span class="qa__bubble-text" id="qaQuestionText"></span>
+              </article>
+              <article class="qa__bubble qa__bubble--answer" id="qaAnswer" aria-live="polite">
+                <span class="qa__label qa__label--a" aria-hidden="true">A</span>
+                <span class="qa__bubble-text" id="qaAnswerText"></span>
+              </article>
+              <img class="qa__sticker qa__sticker--a" id="qaStickerA" src="assets/img/qa_photo1.png" alt="">
+              <img class="qa__sticker qa__sticker--b" id="qaStickerB" src="assets/img/qa_photo2.png" alt="">
+            </div>
+
+            <div class="qa__progress" aria-hidden="true">
+              <span class="qa__progress-dot is-active" data-index="0"></span>
+              <span class="qa__progress-dot" data-index="1"></span>
+              <span class="qa__progress-dot" data-index="2"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- PAGE 6: FROM ME（Wedding_from me / Figma node 820:9859）
+         Q&Aを読み終えたあと、Q&A全体を上へ押し出しながら
+         FROM MEが下から現れる、締めくくりのページ。
+
+         codexが一度作った版から見た目・演出面で手を入れている：
+         (1) 文字を読ませるための塗りを、丸角カード状の箱（.from-me__card
+             のbackground）ではなく背景全面のビネット（.from-me__veilの
+             放射状グラデーション）に変更。動画自体は隅の方でうっすら
+             見える程度に留め、中央（文字が乗る位置）だけしっかり
+             持ち上げることで可読性を確保しつつ、浮いた箱っぽさを
+             解消した（本人指摘：「デザイン的に不満」「背景全面に
+             適用させちゃう」という希望に対応）。
+         (1b) 次に、最初は黒いビネット＋白文字にしていたが「画面全体が
+             暗すぎる」「白地に黒文字で読ませたい」との指摘を受けて、
+             白ベースのすりガラス（frosted glass）表現に再設計した
+             （.from-me__veilに白のradial/linear-gradient＋backdrop-filter）。
+         (1c) さらにその後、「添付の文字背景（FROM MEの切り抜き文字
+             グラフィック）を本文の後ろに敷きたい。今の塗り（frosted
+             glassのビネット）は無しで」との指示を受けて、(1b)の
+             .from-me__veilを廃止し、本人から送付されたFROM MEの
+             切り抜きグラフィック（assets/img/from_me_text_bg.png。※本人が
+             フォルダ構成を整理し、from-me/サブフォルダを廃止して
+             一つ上のimg/直下へ移動したため、パスもそれに合わせて変更済み。
+             実体はごく薄い(約15%)半透明の黒を透過PNGで文字型にくり抜いた
+             もの）を.from-me__text-bgとして動画の上・本文カードの下に
+             敷く方式に差し替えた。全画面を持ち上げる塗りではなく、
+             あくまで背後にうっすら浮かぶ「透かし」として、本文の
+             真後ろに「FROM ME」という文字装飾を重ねている。
+             これに伴い、本文の文字色も(1b)の濃いチャコール(#2b2620)
+             から白系(#fdfbf5)へ戻した：frosted glassの白い下地が
+             無くなり動画へ直接文字を乗せる形になったため、暗い文字の
+             ままだと動画に沈んで読めなくなってしまう。可読性は
+             frosted glassのような背景の塗りではなく、文字側の
+             二重text-shadow（輪郭用の近いシャドウ＋沈み防止用の
+             広いぼかし）だけで確保している。サイズは.from-me__card
+             （本文の実サイズ、46vw）より一回り大きい程度（幅60vw・
+             縦横比は元画像(900:1060)のまま維持）に収め、あくまで
+             本文の背後にさりげなく重なる大きさに留めている
+             （詳細はstyle.css側の.from-me__text-bg／.from-me__message
+             コメント参照）。
+         (2) 文字の登場を、is-activeクラスの有無で切り替わるだけの
+             CSS transition（そのままだと本人指摘の「動画のセクション
+             入ってから文字がすぐ出てきてない」演出になっていた＝
+             is-activeが付いた瞬間にタイマーが動き出すだけで、実際の
+             スクロール位置とは無関係だったため）から、他セクションと
+             同じ「スクロール位置の連続関数」方式に作り直した
+             （assets/js/from-me.jsのsetReveal()参照）。一文字ずつではなく
+             1行ずつ、ふわっと上へ現れる形（バウンドなし・easeOutCubic）
+             を採用：結びの言葉なので、QA/ABOUTのような弾む演出より
+             落ち着いたトーンが合うという判断。各行の登場ウィンドウを
+             少しずつ重ねてずらし、映像が定位置に収まるのと同時に
+             最後の行が現れきるようにしている。
+         (3) 文章が`<br>`ぶつ切りの1つの`<p>`のままだと、指定した
+             .from-me__messageの幅では一部の行が(1)のCSS transitionでは
+             見えなかった問題があり、さらに一行だけ幅が微妙に足りず
+             二重折り返しを起こしていた（例：「これからもそのパワーを
+             絶やすことなく、」の末尾だけ次の行に落ちてしまう）。行ごと
+             に`<span class="from-me__line">`へ分割し、white-space:nowrap
+             にして折り返し自体を起こさないようにした。 -->
+    <section class="page" id="page-from-me" aria-label="FROM ME">
+      <div class="page__frame">
+        <div class="from-me" id="fromMe">
+          <div class="from-me__stage" id="fromMeStage">
+            <video class="from-me__video" id="fromMeVideo" muted loop playsinline preload="metadata" aria-hidden="true">
+              <source src="assets/video/from_me.mp4" type="video/mp4">
+            </video>
+            <div class="from-me__text-bg" aria-hidden="true"></div>
+            <article class="from-me__card">
+              <p class="from-me__message" id="fromMeMessage">
+                <span class="from-me__line">私自身、2人と出会ってから</span>
+                <span class="from-me__line">人生がとても明るくなったと感じます。</span>
+                <span class="from-me__line">好きなことに熱中し、周りを巻き込んで</span>
+                <span class="from-me__line">楽しむことができる2人のパワーが</span>
+                <span class="from-me__line">そうさせたのだと思います。</span>
+                <span class="from-me__line">これからもそのパワーを絶やすことなく、</span>
+                <span class="from-me__line">夫婦として幸せを築いていって欲しいと</span>
+                <span class="from-me__line">思います。</span>
+                <span class="from-me__line">改めてご結婚おめでとうございます。</span>
+              </p>
+            </article>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- PAGE 7: TO BE CONTINUED（見出しのみのテキストページ）
+         本人指示：「TO BE CONTINUEDの文字だけの切り替わりセクションを
+         別で作りたい」。FROM MEからはPT-07（ズーム＋フェード）で
+         切り替わる——FROM ME自体は動かさず定位置に静止させたまま、
+         このページがわずかに縮んだ状態(scale)から不透明度0→1で
+         拡大しながらフェードインしてFROM MEの上に重なる、という
+         シンプルな演出（詳細はassets/js/pager.jsのsetTbcTextEnter()
+         コメント参照）。続くPAGE 8（画像シーン）へはPT-12「スプリット」
+         で切り替わる：このページ自体が左右2枚に分かれて画面外へ
+         スライドし、その下に最初から定位置で待機しているPAGE 8が
+         露わになる。
+         ※本人指示「文字だけセクションに『2人の旅は続く』を入れたい、
+         サブ見出し的な感じで」を受けて、見出し「TO BE CONTINUED」の
+         下にサブ見出し.tbc-text__subheadingを追加した。PT-12
+         スプリットの仕組み上、左右パネル(--l/--r)は常に同じ内容を
+         複製して持つ必要があるため、両方に追加している。 -->
+    <section class="page" id="page-tbc-text" aria-label="TO BE CONTINUED">
+      <div class="page__frame">
+        <div class="tbc-text" id="tbcText">
+          <!-- PT-12（スプリット）は「同じ見た目を左右2枚に複製し、
+               それぞれ反対の半分だけをclip-pathで見せておいて、
+               互いに離れる方向へtranslateXする」ことで実現している。
+               静止時(スプリット比率0)は2枚がぴったり重なって元の
+               1枚の見た目に戻る。 -->
+          <div class="tbc-text__panel tbc-text__panel--l" aria-hidden="true">
+            <div class="tbc-text__group">
+              <h2 class="tbc-text__heading">TO BE CONTINUED</h2>
+              <p class="tbc-text__subheading">2人の旅は続く</p>
+            </div>
+          </div>
+          <div class="tbc-text__panel tbc-text__panel--r">
+            <div class="tbc-text__group">
+              <h2 class="tbc-text__heading">TO BE CONTINUED</h2>
+              <p class="tbc-text__subheading">2人の旅は続く</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- PAGE 8: TO BE CONTINUED（画像シーン／サイト最後のページ）
+         本人から送付されたtbc-01〜10.png（すべて同一サイズ6001×3751の
+         透過PNGキャンバスで、各キャラクター/背景がそのキャンバス内の
+         正しい位置にあらかじめ配置済み）を、同じ箱の上にDOM順で
+         そのまま重ねるだけで元の合成図（tbc-01.pngはその全部乗せの
+         プレビュー・参考用で実際のレイヤーには使わない）を再現できる。
+         背景はtbc-10（不透明の宇宙イラスト）、それ以外
+         （tbc-02〜09.png）はキャラクター単体の透過レイヤー。
+         文字は載せない（本人指示：「画像だけのシーンをページの最後に
+         作る感じ」）。
+         ※本人指摘「センターが割れて最後のセクションに行く演出だけど
+         重いからか分からないけどスムーズじゃない」を受けて最適化。
+         元は全レイヤーが6000〜6001px幅・合計約9.8MB（うちtbc-10だけで
+         6.5MB）もある巨大な透過PNGで、実際に表示されるサイズ
+         （最大でも100vw×100vh、デスクトップでもせいぜい2000〜3000px
+         幅程度）に対して過剰に大きく、初めてPAGE 8が可視化される
+         （PT-12スプリットが始まる）瞬間にブラウザが巨大画像を一斉に
+         デコード・ペイントすることが「重さ」の主因と判断した。
+         対策：①各レイヤーを幅3000px（高DPI環境でも十分な解像度）へ
+         リサイズ、②透過が不要な背景tbc-10だけはPNGからJPEGへ変換
+         （ノイズの多い星空イラストはPNGよりJPEGの方が大幅に軽く、
+         デコードも速い。6.5MB→約1MBに削減）、③assets/js/pager.js側で
+         FROM MEに滞在している間（PAGE 8がまだ見えるずっと前）に
+         img.decode()を先読み実行し、実際にスプリットが始まる時点では
+         すでにデコード済みの状態にしておく（詳細はpager.jsの
+         warmUpTbcSceneImages()コメント参照）。
+         ※一時、本人から添付された動画（星雲が緩やかに漂うカット）を
+         背景に差し替えたが、「ループの繋ぎ目が不自然」と指摘があり
+         静止画に差し戻し済み（動画ファイル自体はassets/video/
+         tbc-scene.mp4として残しているが、このページからは参照して
+         いない。関連するpager.js側の再生管理コード
+         （setTbcSceneActive()内の#tbcSceneVideoまわり）も、
+         要素が存在しない場合は何もしないよう安全にガードされている
+         ため、あえて削除はしていない＝将来また動画を使う場合に
+         復元しやすいよう残してある）。
+         ※さらにその後、本人指示で以下のちょっとした揺れ・回転演出を
+         追加：
+           - ロケット（tbc-02）に`.tbc-scene__layer--rocket`を付与し、
+             transformで1px程度の微振動（エンジン推進の細かい震え）を
+             CSSアニメーションでループさせている
+             （`@keyframes tbc-rocket-shake`）。
+           - （下記の月差し替えで、月とエイリアンまわりの実装方式は
+             全面的に作り直したため、その前段階だったこの時点の
+             「月・エイリアンがその場で360°回転」実装は残っていない。
+             詳細は下の追記コメント参照）。
+         ※さらにその後、本人から新しい月の画像（欠けていない満月の
+         写真）が送付され、「この画像に変えてその場で360°回るように
+         して。現状の月と同じ位置になるようにはみ出して配置しないと
+         いけない」「歩いてる宇宙人たちはその場で360°ではなく、月に
+         沿って360°回るようにしたい＝月の表面を歩いてる感じ」
+         「右上の宇宙飛行士はぷかぷか浮いてる感じにしたい」という
+         3点の指示を受けて、月・キャラクター周りを作り直した：
+           1. 月：旧`tbc-03.png`（元から大きく欠けた状態でキャンバスの
+              角にしか描かれていない）をやめ、本人添付の満月画像を
+              円形に切り抜いて`assets/img/tbc-moon.webp`として保存
+              （透過部分は元画像の時点でアルファ抜き済みだったので
+              追加のマスク処理は不要。900×900・約130KBまで
+              最適化＝WebP採用。このサイトでは`about.webp`
+              （index.html内、fallbackはonerrorで非表示にする方式）
+              で既にWebPを使っている実績があるため同じ方針を踏襲）。
+              `.tbc-scene__moon`として画面右下の角からはみ出す形で
+              絶対配置し（旧`tbc-03`が「大きな球体の一部だけが画面に
+              見えている」見た目だったのと同じ画角になるよう、
+              width/height/right/bottomをすべてvw単位で指定して
+              位置・サイズを揃えた）、`@keyframes tbc-spin`で
+              その場で360°連続回転させている（正円の画像を中心
+              （transform-origin:50% 50%、デフォルト）で回すだけなので、
+              旧実装で必要だった「キャラクターの実絵柄の中心に
+              transform-originを個別計算して合わせる」ような
+              面倒な調整が不要になった）。
+           2. 歩いているエイリアン3体：旧`tbc-04・06・07.png`
+              （巨大な透過キャンバス全体に1体だけ小さく描かれている
+              形式）から、各キャラクターの実際の絵柄だけをPillowで
+              切り抜いた小さい単体画像`assets/img/tbc-alien-1〜3.png`
+              に差し替えた（全身が写る最小サイズまでトリミング）。
+              さらに、たまたま同じ角に描かれていた宇宙飛行士
+              （旧`tbc-05.png`、月の斜面をよじ登るような前傾ポーズ）も
+              同様に`assets/img/tbc-astro-2.png`として切り抜いた
+              （本人からの指示には無かったが、月の位置・見せ方を
+              全面的に作り直す都合上、この宇宙飛行士だけ旧位置に
+              取り残すと月から完全に浮いて見えてしまうため、月の
+              表面にいる4人目として一緒に配置している。もし不要なら
+              後述の`.tbc-scene__orbit`から`.tbc-scene__orbit-astro`の
+              1行を削除すれば非表示にできる）。
+              これら4体は、月とまったく同じ位置・サイズの透明な
+              ラッパー`.tbc-scene__orbit`（`.tbc-scene__moon`と同じ
+              right/bottom/width/heightをCSS変数で共有）の中に配置し、
+              CSSのモーションパス（`offset-path: circle(48% at 50% 50%)`
+              ＝そのラッパー自身の一辺を半径とする、月のふちにぴったり
+              沿う円）に乗せることで、「月という球体の表面（に見える
+              円周）に沿って歩く」動きを実現している。
+              `offset-rotate: auto 90deg`で、進行方向（接線方向）に
+              対して常に90°分＝球の中心から外向きに足が向くよう
+              自動で回転させているため、円周のどの位置にいても
+              「その場所の斜面に立っている」ように見える。
+              エイリアン3体は`@keyframes tbc-orbit`（`offset-distance`
+              を0%→100%へ）をlinear・無限ループで再生し、開始位置
+              （`offset-distance`の初期値、およびマイナスの
+              `animation-delay`で位相をずらす）を3体それぞれ変えて
+              円周上に分散させている。宇宙飛行士だけはアニメーション
+              させず、`offset-distance`を固定値にして１箇所に
+              留まっている（本人からは「歩いてる宇宙人たち」としか
+              指示が無く、宇宙飛行士を歩かせる指示ではなかったため）。
+           3. 右上の宇宙飛行士（風船を持って浮いているtbc-08）：
+              `.tbc-scene__layer--float`を付与し、`@keyframes
+              tbc-float`でtranslateYの上下運動（＋わずかな回転の
+              ゆらぎ）をease-in-out・無限alternateでループさせ、
+              無重力でぷかぷか漂っている感じを出している。
+           月の回転・エイリアンの周回・宇宙飛行士の浮遊は、いずれも
+           装飾的な常時ループアニメーションなので、ロケットの微振動と
+           同じ方針で`prefers-reduced-motion: reduce`では停止する。
+         ※さらにその後、本人指示「背景をこのサイトで作ったような
+         宇宙空間にしてみたい／位置固定の宇宙飛行士も一緒に歩かせたい／
+         宇宙人たちの本体の角度が回転に沿って変わらないと変なので
+         月の中心に向かって立つようにして／月も歩く人も反時計回りに」
+         を受けて以下を変更（詳細はHANDOFF.md 2-3v参照）：
+           1. 背景を静止画（旧tbc-10.jpg・.tbc-scene__layer--bg。HTML
+              からは削除したがファイルは復元用に残置）から、
+              「1作品目」ポートフォリオページの星空Canvas＋星雲演出を
+              移植したものに差し替え（新規assets/js/tbc-space-bg.js、
+              .tbc-scene__stars／__nebula）。
+           2. 月の表面にいる宇宙飛行士（.tbc-scene__orbit-astro）にも
+              エイリアン3体と同じtbc-orbit周回アニメーションを付与
+              （以前は固定配置だった）。
+           3. `offset-rotate: auto 90deg`は実際には「頭が中心を向く
+              逆さ立ち」になっていた不具合だったため`offset-rotate:
+              auto`（追加角度なし）に修正。マーカー画像＋Web
+              Animations APIでの円周上8点スクラブ検証済み。
+           4. 月の自転（tbc-spin）・エイリアン/宇宙飛行士の周回
+              （tbc-orbit）をいずれも反時計回りに変更
+              （前者はkeyframesの終端を-360degへ、後者は
+              `animation`に`reverse`を追加）。 -->
+    <section class="page" id="page-tbc-scene" aria-label="TO BE CONTINUED SCENE">
+      <div class="page__frame">
+        <div class="tbc-scene" id="tbcScene">
+          <canvas class="tbc-scene__stars" id="tbcSceneStars" aria-hidden="true"></canvas>
+
+          <!-- 本人指示「tbc-20〜27も宇宙に漂う感じで。本体がその場で回転
+               しつつ、空間の中も動いてほしい。レイヤーは奥の方で」を
+               受けて追加した8点（スノーボード・ウイスキーボトル・
+               デロリアン・ONE OK ROCKロゴ・クロミ・モンチッチ・黒い豆型の
+               キャラクター・プテラノドン）。既存の4モチーフ（花束等）と
+               全く同じ「外側div（空間移動）＋内側img（その場回転）」の
+               二重構造をそのまま再利用しているが、「レイヤーは奥の方で」
+               の指示に対応するため、この8点だけは
+               ①CSS変数--motif-zを0にして最背面グループに固定し、
+               ②HTML上でも星空Canvasの直後＝地球/ロケット/月/エイリアン
+               などより前（＝スタッキング上はより奥）に配置している。
+               position:absoluteかつz-index:0（＝z-index未指定＝autoの
+               要素と同じ描画順グループ）の要素は、同グループ内では
+               DOM順で重なりが決まるため、ここに置くことで確実に
+               ロケット・月・エイリアン・既存4モチーフ（すべてz-index
+               1以上か、このdivより後のDOM順）より奥に沈む。 -->
+          <div class="tbc-scene__motif tbc-scene__motif--snowboard" aria-hidden="true">
+            <img class="tbc-scene__motif-img" src="assets/img/tbc-snowboard.webp" alt="">
+          </div>
+          <div class="tbc-scene__motif tbc-scene__motif--whisky" aria-hidden="true">
+            <img class="tbc-scene__motif-img" src="assets/img/tbc-whisky.webp" alt="">
+          </div>
+          <div class="tbc-scene__motif tbc-scene__motif--delorean" aria-hidden="true">
+            <img class="tbc-scene__motif-img" src="assets/img/tbc-delorean.webp" alt="">
+          </div>
+          <div class="tbc-scene__motif tbc-scene__motif--oneokrock" aria-hidden="true">
+            <img class="tbc-scene__motif-img" src="assets/img/tbc-oneokrock.webp" alt="">
+          </div>
+          <div class="tbc-scene__motif tbc-scene__motif--kuromi" aria-hidden="true">
+            <img class="tbc-scene__motif-img" src="assets/img/tbc-kuromi.webp" alt="">
+          </div>
+          <div class="tbc-scene__motif tbc-scene__motif--monchhichi" aria-hidden="true">
+            <img class="tbc-scene__motif-img" src="assets/img/tbc-monchhichi.webp" alt="">
+          </div>
+          <div class="tbc-scene__motif tbc-scene__motif--bean" aria-hidden="true">
+            <img class="tbc-scene__motif-img" src="assets/img/tbc-bean.webp" alt="">
+          </div>
+          <div class="tbc-scene__motif tbc-scene__motif--pterodactyl" aria-hidden="true">
+            <img class="tbc-scene__motif-img" src="assets/img/tbc-pterodactyl.webp" alt="">
+          </div>
+
+          <!-- 本人が新たに追加したtbc-28〜31（フィギュア4体）。「tbc-28から
+               32まで追加しました。同じように浮遊させてください」を受けて、
+               直前の8点（スノーボード等）と全く同じ仕組みで追加。
+               同じ最背面グループ（--motif-z:0／DOM上も星空Canvas直後）に
+               並べてあるので、これで最背面を漂うモチーフは12点になった。
+               tbc-32（ランタン）だけは「浮遊よりかは下から上にゆっくり
+               上がってく演出」という別指示だったため、この仕組みには
+               含めず、下の専用のランタン演出（.tbc-scene__lantern-field）
+               に分離してある。 -->
+          <div class="tbc-scene__motif tbc-scene__motif--toy-clown" aria-hidden="true">
+            <img class="tbc-scene__motif-img" src="assets/img/tbc-toy-clown.webp" alt="">
+          </div>
+          <div class="tbc-scene__motif tbc-scene__motif--toy-boy" aria-hidden="true">
+            <img class="tbc-scene__motif-img" src="assets/img/tbc-toy-boy.webp" alt="">
+          </div>
+          <div class="tbc-scene__motif tbc-scene__motif--toy-girl" aria-hidden="true">
+            <img class="tbc-scene__motif-img" src="assets/img/tbc-toy-girl.webp" alt="">
+          </div>
+          <div class="tbc-scene__motif tbc-scene__motif--toy-man" aria-hidden="true">
+            <img class="tbc-scene__motif-img" src="assets/img/tbc-toy-man.webp" alt="">
+          </div>
+
+          <!-- ランタン（tbc-32）7個。「これ複製したいのと、tbc-32は浮遊
+               よりかは下から上にゆっくり上がってく演出かな。ラプンツェルの
+               灯篭祭りを想起できるように。数増やせるなら7個くらい欲しいな」
+               を受けて追加し、その後の本人指示「ロケットより奥のレイヤーに
+               して」を受けてこの位置（星空Canvas～背景12モチーフの直後、
+               ロケット・月・地球より前）へ移動した。本人添付のtbc-32.png
+               （ランタン1個の写真）をPillowでbbox+2%パディングでトリミング
+               ・900px以内にリサイズ・WEBP化した1枚（assets/img/
+               tbc-lantern.webp）を同じ<img>のまま7回複製して並べ、CSSだけで
+               「ラプンツェルの灯篭祭り」のように画面の下から上へゆっくり
+               昇っていく演出にしている（他のモチーフと違い1枚の画像を量産
+               する形なので、named motifごとにCSSを書く.tbc-scene__motif
+               方式ではなく、3灯だけの.tbc-scene__lampと同じ「共通の
+               @keyframes＋CSS変数で1つずつ差をつける」方式を採用）。
+               他のモチーフ（.tbc-scene__motif）と違うクラス名にしてあるのは、
+               assets/js/tbc-motifs.jsが`.tbc-scene__motif`を全部拾って
+               ランダムな直線／円弧の軌道で動かしてしまうため、それを避けて
+               「まっすぐ上に昇る」動きだけを保つため。
+               【奥行き】「ロケットより奥のレイヤーにして」の対応として、
+               ①CSS変数を使わずz-indexを0に固定（＝背景12モチーフと同じ層）、
+               ②HTML上もこの12モチーフの直後・ロケット/月/地球より前に
+               配置した。ロケット・月・地球はいずれもz-index未指定
+               （autoは同じ0の層として扱われ、その層の中ではDOM順で重なりが
+               決まる）なので、ここに置くことで確実にそれらより奥に沈む。
+               上昇の軌道（tbc-lantern-rise-a/b/c）は3種類だけ用意し、7個に
+               使い回すことで、全部が同じ動きに揃いすぎず、かつ8種類の背景
+               モチーフのように1個ずつ専用の@keyframesを書く手間も避けている
+               （fv__petalの複数バリエーション使い回しと同じ考え方）。左右へ
+               わずかに揺れながら昇るところまではモチーフ演出と共通だが、
+               「上がってく」動きを機械的に見せないよう、動きはlinear
+               （花びらの減速修正と同じ理由：ease-in-outだとkeyframesの
+               節目ごとに減速して見えてしまうため）。本体の傾き（内側
+               .tbc-scene__lantern-imgのtbc-lantern-tilt）は紙灯篭が風で
+               少し揺れるイメージでごく小さい範囲（±3度）のみ。暖色の
+               drop-shadowで灯篭自体が発光しているような見た目にしている。 -->
+          <div class="tbc-scene__lantern-field" aria-hidden="true">
+            <div class="tbc-scene__lantern tbc-scene__lantern--1"><img class="tbc-scene__lantern-img" src="assets/img/tbc-lantern.webp" alt=""></div>
+            <div class="tbc-scene__lantern tbc-scene__lantern--2"><img class="tbc-scene__lantern-img" src="assets/img/tbc-lantern.webp" alt=""></div>
+            <div class="tbc-scene__lantern tbc-scene__lantern--3"><img class="tbc-scene__lantern-img" src="assets/img/tbc-lantern.webp" alt=""></div>
+            <div class="tbc-scene__lantern tbc-scene__lantern--4"><img class="tbc-scene__lantern-img" src="assets/img/tbc-lantern.webp" alt=""></div>
+            <div class="tbc-scene__lantern tbc-scene__lantern--5"><img class="tbc-scene__lantern-img" src="assets/img/tbc-lantern.webp" alt=""></div>
+            <div class="tbc-scene__lantern tbc-scene__lantern--6"><img class="tbc-scene__lantern-img" src="assets/img/tbc-lantern.webp" alt=""></div>
+            <div class="tbc-scene__lantern tbc-scene__lantern--7"><img class="tbc-scene__lantern-img" src="assets/img/tbc-lantern.webp" alt=""></div>
+          </div>
+
+          <!-- 左下の地球（本人追加素材：tbc-11.png＝正面から見た丸い地球、
+               tbc-12.png＝下端から覗く地平線構図）。本人指示「tbc-11,12を
+               追加したので、左下に、tbc-11から順に置いてみてどっちがいいか
+               試したい」を受けて、月と対になる位置（左下の角）に試験的に
+               設置。現在はtbc-11版（丸い地球、Pillowで余白をトリミング
+               したassets/img/tbc-earth-11.png）を表示中。tbc-12版に
+               差し替えて見た目を比較したい場合は、下のsrcを
+               `assets/img/tbc-earth-12.png`に書き換えるだけでよい
+               （どちらも同じ.tbc-scene__earthのCSSでそのまま表示できる
+               よう、あらかじめ同じ考え方でトリミング済み）。 -->
+          <img class="tbc-scene__earth tbc-scene__earth--spin" src="assets/img/tbc-earth-11.png" alt="" aria-hidden="true">
+          <img class="tbc-scene__layer tbc-scene__layer--rocket" src="assets/img/tbc-02.png" alt="" aria-hidden="true">
+          <img class="tbc-scene__moon tbc-scene__moon--spin" src="assets/img/tbc-moon.webp" alt="" aria-hidden="true">
+          <!-- 本人指示「月に沿って進むということを無視してるからちゃんと
+               月を歩かせて。宇宙人3人と宇宙飛行士1人を並んで歩かせる
+               ように。順番は最初に固定で配置したように」を受けて、
+               直前の.tbc-scene__march（画面を横切る直線移動）を廃止し、
+               4体まとめて月を周回するこの.tbc-scene__orbitに戻した。
+               「最初に固定で配置したように」＝本人から届いた素材の
+               ファイル番号順（tbc-04→05→06→07）に合わせ、DOM順を
+               エイリアン1→宇宙飛行士→エイリアン2→エイリアン3にして
+               いる。4体は同じ周期・同じ向きのtbc-orbitアニメーションを
+               animation-delayだけずらして再生することで、常に一定の
+               間隔を保ったまま1つの隊列として月の周りを歩き続ける
+               （詳細はstyle.css側のコメント参照）。 -->
+          <div class="tbc-scene__orbit" aria-hidden="true">
+            <img class="tbc-scene__orbit-item tbc-scene__orbit-alien-1" src="assets/img/tbc-alien-1.png" alt="">
+            <img class="tbc-scene__orbit-item tbc-scene__orbit-astro" src="assets/img/tbc-astro-2.png" alt="">
+            <img class="tbc-scene__orbit-item tbc-scene__orbit-alien-2" src="assets/img/tbc-alien-2.png" alt="">
+            <img class="tbc-scene__orbit-item tbc-scene__orbit-alien-3" src="assets/img/tbc-alien-3.png" alt="">
+          </div>
+
+          <img class="tbc-scene__layer tbc-scene__layer--float" src="assets/img/tbc-08.png" alt="" aria-hidden="true">
+          <img class="tbc-scene__layer tbc-scene__layer--float-alt" src="assets/img/tbc-09.png" alt="" aria-hidden="true">
+
+          <!-- 本人指示「最後のページにこの四つのモチーフを回転させながら
+               空間を移動させたい。レイヤーとしては各アイテムの奥行きを
+               作るために表示サイズを変えたりして多層構造で」を受けて
+               追加。花束・ギフトボックス・封筒・シャンパングラスの4点
+               （本人添付の4画像をPillowでbbox+2%パディングでトリミング
+               ・900px以内にリサイズ・WEBP化してassets/img/に保存済み）。
+               外側div（.tbc-scene__motif）が空間を漂う移動、内側img
+               （.tbc-scene__motif-img）がその場での回転を別々に担当し、
+               互いに干渉せず独立した周期で動く（詳細はstyle.css側の
+               コメント参照）。位置・サイズ・z-indexで4層の奥行きを
+               表現：シャンパングラス（最前面・最大）＞花束＞ギフト
+               ボックス＞封筒（最奥・最小）。 -->
+          <div class="tbc-scene__motif tbc-scene__motif--bouquet" aria-hidden="true">
+            <img class="tbc-scene__motif-img" src="assets/img/tbc-bouquet.webp" alt="">
+          </div>
+          <div class="tbc-scene__motif tbc-scene__motif--gift" aria-hidden="true">
+            <img class="tbc-scene__motif-img" src="assets/img/tbc-gift.webp" alt="">
+          </div>
+          <div class="tbc-scene__motif tbc-scene__motif--envelope" aria-hidden="true">
+            <img class="tbc-scene__motif-img" src="assets/img/tbc-envelope.webp" alt="">
+          </div>
+          <div class="tbc-scene__motif tbc-scene__motif--champagne" aria-hidden="true">
+            <img class="tbc-scene__motif-img" src="assets/img/tbc-champagne.webp" alt="">
+          </div>
+
+          <!-- 本人指示「tbc-17〜19は上から垂らす感じ。希望は紐が見切れない
+               くらいに左右にゆっくり揺らしたい」を受けて追加した3点の
+               ペンダントライト（銅・赤・黒）。画面上端から吊るされている
+               ように見せるため、天井から伸びるコードの付け根が画像の
+               ほぼ真上端に来るようPillowでトリミング済み（tbc-lamp-*）。
+               揺らし方は「紐が見切れないように」という指示に合わせ、
+               transform-origin: 50% 0%（＝コードの付け根＝画像の
+               上端中央）を回転の軸に固定したうえでrotate()のみを
+               振り子のように往復させる方式にした。回転軸そのものが
+               画像の上端にあるため、どれだけ揺れてもその軸点自体は
+               動かず、コードが画面上端の外へまっすぐ伸びているという
+               見た目が崩れない（＝コードが「見切れる」＝不自然に途切れて
+               見えることがない）。詳細はstyle.css側のコメント参照。 -->
+          <div class="tbc-scene__lamp tbc-scene__lamp--copper" aria-hidden="true">
+            <img class="tbc-scene__lamp-img" src="assets/img/tbc-lamp-copper.webp" alt="">
+          </div>
+          <div class="tbc-scene__lamp tbc-scene__lamp--red" aria-hidden="true">
+            <img class="tbc-scene__lamp-img" src="assets/img/tbc-lamp-red.webp" alt="">
+          </div>
+          <div class="tbc-scene__lamp tbc-scene__lamp--black" aria-hidden="true">
+            <img class="tbc-scene__lamp-img" src="assets/img/tbc-lamp-black.webp" alt="">
+          </div>
+
+          <!-- 本人指示「最後のページの右下あたりにトップへ戻るボタンを
+               置きたい」を受けて追加。クリックでページ最上部（FV）へ
+               スムーズスクロールする（assets/js/tbc-top-button.js）。
+               4つの浮遊モチーフ（z-index最大4）より確実に手前に
+               表示されるようz-indexを大きめにしてある。 -->
+          <button type="button" class="tbc-scene__top-btn" id="tbcTopBtn">
+            <svg width="12" height="12" viewBox="0 0 14 14" aria-hidden="true"><path d="M7 11 V3 M3 6 L7 2 L11 6" fill="none" stroke="#282828" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            TOPへ戻る
+          </button>
+        </div>
+      </div>
+    </section>
+
+  </div>
+</div>
+
+<!-- MEMORYの「カーソルラベル」：写真にカーソルを乗せると円形バッジが
+     マウス位置に追従して出現する（Figmaの「カーソルラベル」コンポーネント）。
+     position:fixedで正しく効かせるため、transformがかかるページ構造の
+     外＝body直下に置く（詳しくは assets/js/memory-cursor.js の先頭コメント）。 -->
+<div class="memory__cursor" id="memoryCursor" aria-hidden="true">
+  <div class="memory__cursor-inner">
+    <svg class="memory__cursor-ring" viewBox="0 0 100 100">
+      <defs>
+        <path id="memoryCursorRingPath" d="M 50,12 A 38,38 0 1 1 49.99,12" />
+      </defs>
+      <text class="memory__cursor-ring-text">
+        <textPath href="#memoryCursorRingPath" startOffset="0%">MEMORY　・　MEMORY　・　MEMORY　・</textPath>
+      </text>
+    </svg>
+    <span class="memory__cursor-play">
+      <span class="memory__cursor-play-text memory__cursor-play-text--play">PLAY</span>
+      <span class="memory__cursor-play-text memory__cursor-play-text--stop">STOP</span>
+    </span>
+    <span class="memory__cursor-more">MORE</span>
+  </div>
+</div>
+<!-- .scroll-stage の実際の高さ(何px分スクロールできるか)は、本文の
+     実測の高さに合わせてJS(pager.js)が起動時/リサイズ時に設定する。 -->
+
+<script src="assets/js/interactions.js"></script>
+<script src="assets/js/qa.js"></script>
+<script src="assets/js/from-me.js"></script>
+<script src="assets/js/pager.js"></script>
+<script src="assets/js/about-arc.js"></script>
+<script src="assets/js/tbc-space-bg.js"></script>
+<script src="assets/js/tbc-top-button.js"></script>
+<!-- 最後のページのモチーフ（tbc-13〜16・20〜27）を一定の速さでランダムな直線／円弧に沿って動かす -->
+<script src="assets/js/tbc-motifs.js"></script>
+<script src="assets/js/memory-cursor.js"></script>
+<script src="assets/js/memory-video.js"></script>
+<!-- MESSAGEカードのチルト演出用（本人指定のvanilla-tilt.js）。
+     data-tilt属性はHTML側には付けず、message-card.jsがカードの
+     登場演出が完全に止まった(is-settled)瞬間にVanillaTilt.init()する
+     （演出中に動かしてしまうとpager.js側のtransformと競合するため）。 -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/vanilla-tilt/1.8.1/vanilla-tilt.min.js"></script>
+<script src="assets/js/page-transition.js"></script>
+<script src="assets/js/site-loader.js"></script>
+<script src="assets/js/message-card.js"></script>
+<script src="assets/js/memory-more.js"></script>
+<!-- ファーストビューの登場演出（奥→手前に1枚ずつ浮かび上がる）＋完成後の
+     マウスチルト。下の先出しオーバーレイの片付け処理から呼ぶので、その前に読む。 -->
+<script src="assets/js/fv-intro.js"></script>
+<!-- 画面を覆う先出しオーバーレイ（冒頭のインラインスクリプト参照）を
+     ここで片付ける。sessionStorageの印を1回だけ読み（consumeReturn()）、
+     2通りに分岐する：
+     (1) message-list.htmlの「MESSAGEに戻る」から帰ってきた場合——
+         これまでどおり、MESSAGEセクションまでスクロールを合わせてから
+         サークルマスクをすぼめて見せる。
+     (2) それ以外＝サイトへの通常の入場——本人指示「サイト開いた時の
+         演出ね。ロード/ロード終わる/幕が開く」への対応として、PT-13
+         ローダー（assets/js/site-loader.js、賑やかなページ遷移
+         カタログのX06「カウンターが割り込む」＝カウントアップ＋
+         進捗バー）を再生してから、slideOverlayAway()（幕がそのまま
+         上へスライドして抜ける動き）でFVを現す。
+     どちらもフォント読み込み・画像サイズが確定してからの方が見た目が
+     安定するため、document.fonts.readyを待つ（待てない環境では
+     windowのloadで代用）。 -->
+<script>
+(function () {
+  if (!window.wlpPageTransition) return;
+  var isReturn = window.wlpPageTransition.consumeReturn();
+  // (3) memory-list.html（MEMORY下層ページ）の「MEMORYに戻る」から帰って
+  //     きた場合——冒頭の先出しオーバーレイは(2)と同じ#282828（MEMORYの
+  //     背景色と同じ）なので、そのまま暗幕として使い、MEMORYのパンが
+  //     終わった位置（ボタンが見えている画面）へスクロールを合わせてから、
+  //     空間が大きい状態から等倍へ縮みつつ暗幕が晴れる＝本人構想の
+  //     「ズームアウトしてトップページに戻る」。
+  var isMemoryReturn = !isReturn && window.wlpPageTransition.consumeReturnToMemory
+    && window.wlpPageTransition.consumeReturnToMemory();
+  var reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  function revealFromMemory() {
+    if (typeof window.__scrollToMemoryRestY === 'function') {
+      window.__scrollToMemoryRestY();
+    }
+    var stage = document.querySelector('#page-memory .memory__stage');
+    requestAnimationFrame(function () {
+      if (stage && window.wlpPageTransition.zoomOutReveal) {
+        window.wlpPageTransition.zoomOutReveal(stage);
+      } else {
+        window.wlpPageTransition.shrinkOverlayAway();
+      }
+    });
+  }
+
+  function revealFromMessage() {
+    if (typeof window.__scrollToMessageRestY === 'function') {
+      window.__scrollToMessageRestY();
+    }
+    // スクロール適用直後の1フレームを挟んでから閉じ始めることで、
+    // マスクがすぼまり始める瞬間には確実にMESSAGEセクションが
+    // 描画し終えている状態にする。
+    requestAnimationFrame(() => {
+      window.wlpPageTransition.shrinkOverlayAway();
+    });
+  }
+
+  function revealFreshLoad() {
+    var overlay = window.wlpPageTransition.ensureOverlay();
+    if (!window.wlpSiteLoader || reduceMotion) {
+      // site-loader.js未読込／reduced-motion環境ではローダーを飛ばし、
+      // 従来どおりの「すぼまって現れる」動きだけ再生する。
+      window.wlpPageTransition.shrinkOverlayAway();
+      if (window.wlpFvIntro) window.wlpFvIntro.skip();
+      return;
+    }
+    window.wlpSiteLoader.run(overlay, {
+      reduceMotion,
+      onDone: () => {
+        // 本人指示「マスクが縮小してファーストビューじゃなくて
+        // 賑やかなページ遷移のX06カウンターが割り込むを適用したい」
+        // への対応：④の「幕が開く」を、すぼまるshrinkOverlayAway()
+        // からX06と同じ「幕がそのまま上へスライドして抜ける」
+        // slideOverlayAway()に差し替えた。
+        window.wlpPageTransition.slideOverlayAway();
+        // 本人指示「画面が開いた瞬間に、奥のレイヤーから手前のレイヤーへと
+        // 1枚ずつ順番にフワッと浮かび上がってファーストビューが完成」：
+        // 幕が上がり始めるのと同時に登場演出を始める（assets/js/fv-intro.js）。
+        if (window.wlpFvIntro) window.wlpFvIntro.play();
+      },
+    });
+  }
+
+  var reveal = isReturn ? revealFromMessage : (isMemoryReturn ? revealFromMemory : revealFreshLoad);
+  // 下層ページから戻った時は登場演出を行わず、最初から完成した状態で
+  // チルトだけ有効にする（fv-intro.js）。
+  if ((isReturn || isMemoryReturn) && window.wlpFvIntro) window.wlpFvIntro.skip();
+  if (document.fonts && document.fonts.ready) {
+    document.fonts.ready.then(reveal).catch(reveal);
+  } else {
+    window.addEventListener('load', reveal);
+  }
+})();
+</script>
 </body>
-
 </html>

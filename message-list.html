@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>いただいたメッセージ一覧 | happy wedding</title>
+<meta name="description" content="お二人あてに届いたお祝いメッセージの一覧です。">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=Noto+Sans+JP:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/css/message-list.css">
+</head>
+<body class="mlist-body">
+<!-- 本人指示により「広がって閉じて飛ぶ」ではなく「広がって表示される」の
+     一動作に変更。このページの中身（戻るリンク＋メイン）全体を
+     #mlistRevealでラップし、画面中央を中心にclip-path circleを
+     0%→150%へ広げることで「広がる動きそのものが表示される動き」になる。
+     初回ペイントの時点で既に0%（＝見えない）状態にしておく必要があるため、
+     インラインstyleで直接指定する（外部CSSの読み込みを待つとその間
+     中身が見えてしまう）。詳細はassets/js/page-transition.js。 -->
+<div id="mlistReveal" style="clip-path:circle(0% at 50% 50%)">
+
+<!-- 背景：封筒散らばりデザイン（本人指示により差し替え）。
+     詳細はassets/css/message-list.cssの該当コメント参照。 -->
+<div class="mlist__bg-rise" aria-hidden="true">
+  <div class="mlist__bg-tiles"></div>
+</div>
+
+<a class="mlist__back" href="index.html" id="mlistBack">
+  <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M9 2 L3 7 L9 12" fill="none" stroke="#282828" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  MESSAGEに戻る
+</a>
+
+<main class="mlist" id="mlist">
+  <header class="mlist__head">
+    <p class="mlist__eyebrow">MESSAGE</p>
+    <h1 class="mlist__title mlist-dela">いただいたお祝いメッセージ</h1>
+  </header>
+
+  <!-- 本人指示「友人と家族、親族で分けたい。カードが並んでる画面で
+       区画分けしたい」への対応：このコンテナ自体はグリッドを持たず、
+       中に「友人」「家族・親族」それぞれの見出し＋グリッドを
+       message-list.jsが個別に描画する（assets/css/message-list.cssの
+       .mlist__group関連ルール参照）。 -->
+  <div class="mlist__groups" id="mlistGrid" aria-label="メッセージ一覧"></div>
+</main>
+
+<div class="mlist__overlay" id="mlistOverlay" hidden></div>
+
+</div><!-- /#mlistReveal -->
+
+<script src="assets/js/page-transition.js"></script>
+<script src="assets/js/message-list.js"></script>
+</body>
+</html>

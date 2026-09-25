@@ -117,7 +117,27 @@
 
   resize();
   window.addEventListener('resize', resize);
-  if (!reduceMotion) {
-    raf = requestAnimationFrame(tick);
+
+  // 本人指摘「ページの最後が重い」への対応：以前はサイトを開いた瞬間
+  // からずっとループしていたが、PAGE 8（#page-tbc-scene）が表示中
+  // （is-active）の間だけ描画ループを回し、それ以外は止める。
+  var scenePage = document.getElementById('page-tbc-scene');
+  function syncLoop() {
+    if (reduceMotion) return;
+    var active = !scenePage || scenePage.classList.contains('is-active');
+    if (active && raf === null) {
+      if (!w || !h) resize();
+      raf = requestAnimationFrame(tick);
+    } else if (!active && raf !== null) {
+      cancelAnimationFrame(raf);
+      raf = null;
+    }
   }
+  if (scenePage) {
+    new MutationObserver(syncLoop).observe(scenePage, {
+      attributes: true,
+      attributeFilter: ['class']
+    });
+  }
+  syncLoop();
 })();

@@ -29,8 +29,13 @@
   const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   if (page && video) {
+    // 最後のTBC画像シーン（PAGE 8）が表示されている間は、FROM MEは
+    // その下に完全に隠れていて見えないため、動画も一時停止して負荷を
+    // 減らす（本人指摘「ページの最後が重い」への対応）。
+    const tbcScenePage = document.getElementById('page-tbc-scene');
     const syncPlayback = () => {
-      if (page.classList.contains('is-active')) {
+      const hiddenByTbcScene = tbcScenePage && tbcScenePage.classList.contains('is-active');
+      if (page.classList.contains('is-active') && !hiddenByTbcScene) {
         const playPromise = video.play();
         if (playPromise && typeof playPromise.catch === 'function') {
           playPromise.catch(() => {});
@@ -44,6 +49,12 @@
       attributes: true,
       attributeFilter: ['class'],
     });
+    if (tbcScenePage) {
+      new MutationObserver(syncPlayback).observe(tbcScenePage, {
+        attributes: true,
+        attributeFilter: ['class'],
+      });
+    }
 
     syncPlayback();
   }

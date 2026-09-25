@@ -3279,6 +3279,9 @@ img { display: block; max-width: 100%; }
   width: 100%;
   height: auto;
   filter: drop-shadow(0 0 8px rgba(255, 178, 84, 0.6)) drop-shadow(0 0 20px rgba(255, 140, 60, 0.35));
+  /* 光のぼかしを一度だけ描いて、揺れ（rotate）はGPU側で動かす
+     （毎フレームのぼかし再計算を防ぐ。本人指摘「ページの最後が重い」対応） */
+  will-change: transform;
   animation: tbc-lantern-tilt var(--tilt-duration, 6s) ease-in-out infinite alternate;
   animation-delay: var(--tilt-delay, 0s);
 }
@@ -3399,4 +3402,12 @@ img { display: block; max-width: 100%; }
     padding: 0 14px;
     font-size: 12px;
   }
+}
+
+/* 本人指摘「ページの最後が重い」への対応：PAGE 8（TBC画像シーン）が
+   表示されていない間は、中のCSSアニメーションを一時停止しておく
+   （.page{visibility:hidden}で見えていなくても、アニメーション自体は
+   動き続けてしまうため）。 */
+#page-tbc-scene.page:not(.is-active) * {
+  animation-play-state: paused !important;
 }
